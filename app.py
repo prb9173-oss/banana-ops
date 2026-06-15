@@ -6,8 +6,8 @@ import hashlib
 import base64
 import requests
 import pandas as pd
-import json  # 계정 정보를 파일에 저장하기 위해 임포트
-import os  # 로컬 저장 파일 경로를 체크하기 위해 임포트
+import json  # 계정 정보를 로컬 파일에 영구 기록하기 위해 임포트
+import os  # 로컬 디스크 파일 경로 조회를 위해 임포트
 
 # ==========================================
 # [데이터 영구 저장] accounts.json 파일 읽기/쓰기 모듈
@@ -31,9 +31,19 @@ def save_accounts(accounts):
     except Exception as e:
         st.error(f"계정 저장 중 오류가 발생했습니다: {str(e)}")
 
-# 앱 구동 시 로컬 컴퓨터 혹은 서버 디스크로부터 계정을 불러와 세션 상태에 올립니다.
+# 스트림릿 세션 상태 사전에 영구 보관된 계정 정보를 매핑합니다.
 if 'ad_accounts' not in st.session_state:
     st.session_state['ad_accounts'] = load_accounts()
+
+# 💡 [피드백 적용] 인풋 위젯의 상태(값) 제어를 위한 빈 세션 키를 생성해 줍니다.
+if 'input_customer_id' not in st.session_state:
+    st.session_state['input_customer_id'] = ""
+if 'input_api_key' not in st.session_state:
+    st.session_state['input_api_key'] = ""
+if 'input_secret_key' not in st.session_state:
+    st.session_state['input_secret_key'] = ""
+if 'reg_name' not in st.session_state:
+    st.session_state['reg_name'] = ""
 
 
 # ==========================================
@@ -175,7 +185,6 @@ def get_mock_daily_stats(adgroup_id, start_date, end_date):
         })
     return pd.DataFrame(rows)
 
-# 모의 키워드 조회 지표에도 일수 스케일링 규칙을 동일하게 부여합니다.
 def get_mock_keyword_stats(adgroup_id, ad_type, start_date, end_date):
     import random
     random.seed(hash(adgroup_id))
@@ -189,9 +198,7 @@ def get_mock_keyword_stats(adgroup_id, ad_type, start_date, end_date):
     
     selected_kws = random.sample(keywords, min(len(keywords), 10))
     
-    # 💡 조회 시작일과 종료일간의 일수 계산
     selected_days = (end_date - start_date).days + 1
-    # 28일치 모의 데이터에 보정 비율 적용
     scale_factor = selected_days / 28.0
     
     rows = []
@@ -221,11 +228,10 @@ def fetch_campaigns(customer_id, api_key, secret_key, ad_type):
         return []
     campaigns = response.json()
     
-    # 💡 [피드백 반영] 네이버 파워컨텐츠 캠페인은 ncc 내부 코드에서 'CONTENTS' 또는 'INFORMATION' 명칭으로 매핑되어 동작합니다.
     type_mapping = {
         '검색광고': ['WEB_SITE'],
         '플레이스광고': ['PLACE'],
-        '파워컨텐츠광고': ['CONTENTS', 'POWER_CONTENT', 'POWER_CONTENTS', 'INFORMATION']  # 여러 파워컨텐츠 명칭 후보를 모두 체크합니다.
+        '파워컨텐츠광고': ['CONTENTS', 'POWER_CONTENT', 'POWER_CONTENTS', 'INFORMATION']
     }
     target_types = type_mapping.get(ad_type, ['WEB_SITE'])
     return [c for c in campaigns if c.get('campaignTp') in target_types]
@@ -267,10 +273,15 @@ def fetch_place_avg_bid(customer_id, api_key, secret_key, adgroup_id):
 def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date):
     BASE_URL = "https://api.searchad.naver.com"
     uri = "/stats"
+    
+    # 💡 start_date, end_date 가 객체 상태로 들어오므로 통신 직전에 문자열 변환 처리
+    formatted_start = start_date.strftime("%Y-%m-%d")
+    formatted_end = end_date.strftime("%Y-%m-%d")
+    
     params = {
         'id': adgroup_id,
         'fields': '["impCnt","clkCnt","ctr","cpc","salesAmt"]',
-        'timeRange': f'{{"since":"{start_date}","until":"{end_date}"}}',
+        'timeRange': f'{{"since":"{formatted_start}","until":"{formatted_end}"}}',
         'timeIncrement': '1'
     }
     headers = get_header("GET", uri, api_key, secret_key, customer_id)
@@ -301,12 +312,16 @@ def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, 
         return pd.DataFrame(data_rows)
     return None
 
+# 💡 [정밀 수정 완료] start_date와 end_date를 'datetime.date' 순수 객체 형태로 넘겨받아 TypeError를 방지합니다.
 def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date, ad_type):
     BASE_URL = "https://api.searchad.naver.com"
     
+    # 통신 조회를 위해 문자열 변형 처리
+    formatted_start = start_date.strftime("%Y-%m-%d")
+    formatted_end = end_date.strftime("%Y-%m-%d")
+    
     if ad_type == '플레이스광고':
         uri = "/stats"
-        # NPLA_SCH_KEYWORD는 제외검색어 내부 팝업과 정확히 일치하는 성과 키워드 수집 전용 statType 명세입니다.
         params = {
             'id': adgroup_id,
             'statType': 'NPLA_SCH_KEYWORD'
@@ -334,9 +349,7 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
         if data_rows:
             df = pd.DataFrame(data_rows)
             
-            # 💡 [피드백 적극 반영 - 날짜 조절 비례 보정]
-            # 네이버 API 명세 상 NPLA_SCH_KEYWORD는 강제로 최근 28일 누적치만 응답합니다.
-            # 주간 및 개별 지정한 기간 범위에 부합하도록 일수 비중 계수를 구하여 통계 수치에 적용합니다.
+            # 💡 [TypeError 디버깅 패치 완료] end_date와 start_date가 이제 정상적인 datetime.date 객체이므로 일수 연산이 안전하게 진행됩니다.
             selected_days = (end_date - start_date).days + 1
             if selected_days != 28:
                 scale_coeff = selected_days / 28.0
@@ -348,7 +361,6 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
         return None
         
     else:
-        # 일반 파워링크(검색광고)의 매니지드 등록형 키워드 조회 엔진
         kw_list_uri = "/ncc/keywords"
         kw_params = {'nccAdgroupId': adgroup_id}
         kw_headers = get_header("GET", kw_list_uri, api_key, secret_key, customer_id)
@@ -372,7 +384,7 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
             params = {
                 'ids': chunk_ids,
                 'fields': '["impCnt","clkCnt"]',
-                'timeRange': f'{{"since":"{start_date}","until":"{end_date}"}}'
+                'timeRange': f'{{"since":"{formatted_start}","until":"{formatted_end}"}}'
             }
             headers = get_header("GET", stats_uri, api_key, secret_key, customer_id)
             response = requests.get(f"{BASE_URL}{stats_uri}", params=params, headers=headers)
@@ -399,18 +411,34 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
 
 
 # ==========================================
-# [사이드바 구성] 광고 ID 선택, 파일 저장 및 삭제 연동
+# [사이드바 설계 및 계정 동기화 콜백 처리]
 # ==========================================
 st.sidebar.markdown("### 📁 1. 광고 ID(계정) 선택")
 
 available_accounts = list(st.session_state['ad_accounts'].keys())
 
+# 💡 [피드백 반영] 계정 선택 시, 인풋의 값을 해당 계정의 고유 값으로 즉각 교체하는 콜백 함수 선언
+def update_inputs_from_profile():
+    prof = st.session_state.get('selected_profile')
+    if prof and prof in st.session_state['ad_accounts']:
+        keys = st.session_state['ad_accounts'][prof]
+        st.session_state['input_customer_id'] = keys["customer_id"]
+        st.session_state['input_api_key'] = keys["api_key"]
+        st.session_state['input_secret_key'] = keys["secret_key"]
+
+# 계정 목록 존재 여부에 따라 UI 선택기 렌더링
 if available_accounts:
+    # 최초 구동 시 세션 상태에 선택 계정이 존재하지 않으면 초기 동기화 진행
+    if 'selected_profile' not in st.session_state:
+        st.session_state['selected_profile'] = available_accounts[0]
+        update_inputs_from_profile()
+        
     selected_profile = st.sidebar.selectbox(
         "관리 중인 계정을 선택하시면 저장된 API 키를 자동으로 불러옵니다.", 
-        options=available_accounts
+        options=available_accounts,
+        key='selected_profile',
+        on_change=update_inputs_from_profile # 선택 변경 시 콜백 작동
     )
-    active_keys = st.session_state['ad_accounts'][selected_profile]
     
     if st.sidebar.button("🗑️ 선택된 광고 ID 삭제"):
         del st.session_state['ad_accounts'][selected_profile]
@@ -419,31 +447,44 @@ if available_accounts:
         time.sleep(0.5)
         st.rerun()
 else:
-    selected_profile = None
-    active_keys = {"customer_id": "", "api_key": "", "secret_key": ""}
     st.sidebar.warning("⚠️ 등록된 광고 ID가 없습니다. 하단의 3번 항목에서 신규 계정을 우선 등록해 주세요.")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔑 2. API 인증 키 관리")
 
-input_customer_id = st.sidebar.text_input("CUSTOMER_ID", value=active_keys["customer_id"])
-input_api_key = st.sidebar.text_input("액세스 라이선스 (API KEY)", value=active_keys["api_key"], type="password")
-input_secret_key = st.sidebar.text_input("비밀키 (SECRET_KEY)", value=active_keys["secret_key"], type="password")
+# 💡 위젯의 값(value)을 세션 상태 사전에 직접 바인딩하여 데이터 싱크를 정밀히 정렬합니다.
+st.sidebar.text_input("CUSTOMER_ID", key="input_customer_id")
+st.sidebar.text_input("액세스 라이선스 (API KEY)", type="password", key="input_api_key")
+st.sidebar.text_input("비밀키 (SECRET_KEY)", type="password", key="input_secret_key")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### ➕ 3. 새로운 광고 ID(계정) 등록")
 
-reg_name = st.sidebar.text_input("신규 계정 별칭", placeholder="예: 인하우스 패션몰 C")
+st.sidebar.text_input("신규 계정 별칭", placeholder="예: 인하우스 패션몰 C", key="reg_name")
 
+# 💡 [피드백 적극 반영] 새로운 광고 계정 정보 저장 시 인풋 칸 초기화 기능 구현
 if st.sidebar.button("💾 위 정보로 광고 ID 등록"):
-    if reg_name and input_customer_id and input_api_key and input_secret_key:
-        st.session_state['ad_accounts'][reg_name] = {
-            "customer_id": input_customer_id,
-            "api_key": input_api_key,
-            "secret_key": input_secret_key
+    cust_id = st.session_state['input_customer_id']
+    api_k = st.session_state['input_api_key']
+    sec_k = st.session_state['input_secret_key']
+    r_name = st.session_state['reg_name']
+    
+    if r_name and cust_id and api_k and sec_k:
+        # 데이터 갱신 및 파일 기록
+        st.session_state['ad_accounts'][r_name] = {
+            "customer_id": cust_id,
+            "api_key": api_k,
+            "secret_key": sec_k
         }
         save_accounts(st.session_state['ad_accounts'])
-        st.sidebar.success(f"'{reg_name}' 계정이 성공적으로 등록되었습니다!")
+        
+        # 💡 저장 직후 입력란 상태를 완전한 공백("")으로 초기화하여 다음 입력을 깔끔하게 대기합니다.
+        st.session_state['input_customer_id'] = ""
+        st.session_state['input_api_key'] = ""
+        st.session_state['input_secret_key'] = ""
+        st.session_state['reg_name'] = ""
+        
+        st.sidebar.success(f"'{r_name}' 계정이 성공적으로 등록되었습니다! (입력창 초기화 완료)")
         time.sleep(0.5)
         st.rerun()
     else:
@@ -456,12 +497,13 @@ if st.sidebar.button("💾 위 정보로 광고 ID 등록"):
 st.subheader("인하우스 마케팅 주간 데이터 추출기")
 st.caption("사이드바에서 등록한 계정은 로컬에 영구 보존됩니다. 일별 상세데이터 복사 시 단위 텍스트가 생략되어 편리하게 사칙연산 하실 수 있습니다.")
 
+# 계정 등록 의무 차단 분기
 if not available_accounts:
     st.info("👈 왼쪽 사이드바의 3번 항목에서 새로운 광고 ID(계정)를 먼저 등록해 주셔야 원활한 조회가 시작됩니다.")
     st.stop()
 
-# 가상 시뮬레이션 작동 요건 체크
-is_test_mode = ("mock" in input_customer_id.lower()) or (input_customer_id == "")
+# 가상 시뮬레이션 판정 (입력값 제어 연동)
+is_test_mode = ("mock" in st.session_state['input_customer_id'].lower()) or (st.session_state['input_customer_id'] == "")
 
 col_date1, col_date2 = st.columns(2)
 with col_date1:
@@ -469,9 +511,9 @@ with col_date1:
 with col_date2:
     end_date = st.date_input("조회 종료일 (일요일)", value=last_sunday)
 
-formatted_start = start_date.strftime("%Y-%m-%d")
-formatted_end = end_date.strftime("%Y-%m-%d")
-
+# ==========================================
+# 🗂 광고 구성 단계별 선택 구성
+# ==========================================
 st.markdown("### 🗂&nbsp;&nbsp;광고 구성 단계별 선택")
 
 selected_ad_type = st.selectbox("1. 광고그룹 유형을 선택해 주세요.", ['검색광고', '플레이스광고', '파워컨텐츠광고'])
@@ -479,7 +521,12 @@ selected_ad_type = st.selectbox("1. 광고그룹 유형을 선택해 주세요."
 if is_test_mode:
     campaign_list = get_mock_campaigns(selected_ad_type)
 else:
-    campaign_list = fetch_campaigns(input_customer_id, input_api_key, input_secret_key, selected_ad_type)
+    campaign_list = fetch_campaigns(
+        st.session_state['input_customer_id'], 
+        st.session_state['input_api_key'], 
+        st.session_state['input_secret_key'], 
+        selected_ad_type
+    )
 
 if not campaign_list:
     st.warning("⚠️ 선택하신 유형에 부합하는 캠페인이 확인되지 않습니다.")
@@ -491,7 +538,12 @@ selected_camp_id = st.selectbox("2. 캠페인을 지정해 주세요.", options=
 if is_test_mode:
     adgroup_list = get_mock_adgroups(selected_camp_id)
 else:
-    adgroup_list = fetch_adgroups(input_customer_id, input_api_key, input_secret_key, selected_camp_id)
+    adgroup_list = fetch_adgroups(
+        st.session_state['input_customer_id'], 
+        st.session_state['input_api_key'], 
+        st.session_state['input_secret_key'], 
+        selected_camp_id
+    )
 
 if not adgroup_list:
     st.warning("⚠️ 지정된 캠페인 하위에 개설된 광고그룹이 존재하지 않습니다.")
@@ -501,14 +553,19 @@ adg_options = {g['nccAdgroupId']: g['name'] for g in adgroup_list}
 selected_adg_id = st.selectbox("3. 상세 광고그룹을 지정해 주세요.", options=list(adg_options.keys()), format_func=lambda x: adg_options[x])
 
 
-# '평균 광고 노출 입찰가' 동적 추출 및 보정
+# '평균 광고 노출 입찰가' 연동 모듈
 if selected_ad_type == '플레이스광고':
     avg_bid_val = None
     if not is_test_mode:
-        avg_bid_val = fetch_place_avg_bid(input_customer_id, input_api_key, input_secret_key, selected_adg_id)
+        avg_bid_val = fetch_place_avg_bid(
+            st.session_state['input_customer_id'], 
+            st.session_state['input_api_key'], 
+            st.session_state['input_secret_key'], 
+            selected_adg_id
+        )
         
     if avg_bid_val is None:
-        avg_bid_val = 1460  # 가이드용 1,460원 보정 값 연동
+        avg_bid_val = 1460
         
     st.info(f"💡 **같은 지역 동종 업종 광고들의 평균 광고 노출 입찰가 참고하기 도움말**\n\n"
             f"**평균 광고 노출 입찰가 : {avg_bid_val:,}**")
@@ -533,8 +590,12 @@ if show_daily_detail:
             raw_df = get_mock_daily_stats(selected_adg_id, start_date, end_date)
         else:
             raw_df = fetch_daily_stats(
-                input_customer_id, input_api_key, input_secret_key, 
-                selected_adg_id, formatted_start, formatted_end
+                st.session_state['input_customer_id'], 
+                st.session_state['input_api_key'], 
+                st.session_state['input_secret_key'], 
+                selected_adg_id, 
+                start_date, 
+                end_date
             )
             
         if raw_df is not None and not raw_df.empty:
@@ -577,13 +638,19 @@ if show_daily_detail:
 # [액션 2] 상위 키워드 지표 출력
 # ==========================================
 if show_keyword_rank:
+    # 💡 [정밀 수정 패치 작동] start_date와 end_date를 텍스트가 아닌 순수 date 타입으로 온전히 넘겨줍니다.
     with st.spinner("가장 성과가 뛰어난 상위 10개 키워드 지표를 추적하는 중..."):
         if is_test_mode:
             kw_df = get_mock_keyword_stats(selected_adg_id, selected_ad_type, start_date, end_date)
         else:
             kw_df = fetch_keyword_stats(
-                input_customer_id, input_api_key, input_secret_key, 
-                selected_adg_id, formatted_start, formatted_end, selected_ad_type
+                st.session_state['input_customer_id'], 
+                st.session_state['input_api_key'], 
+                st.session_state['input_secret_key'], 
+                selected_adg_id, 
+                start_date, 
+                end_date, 
+                selected_ad_type
             )
             
         if kw_df is not None and not kw_df.empty:
@@ -597,7 +664,6 @@ if show_keyword_rank:
                 }
             )
             
-            # 플레이스 광고 시 기간 보정이 어떻게 적용되었는지 안내 메시지 추가
             if selected_ad_type == '플레이스광고':
                 st.success(f"✅ 네이버 API 정책 상 제외검색어 데이터는 고정된 최근 28일치로 집계되므로, 지정하신 조회 기간({(end_date - start_date).days + 1}일) 비율에 가깝도록 정합성 비례 보정을 거쳐 출력했습니다.")
             else:
