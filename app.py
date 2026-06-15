@@ -31,11 +31,12 @@ def save_accounts(accounts):
     except Exception as e:
         pass
 
-# 세션 메모리에 영구 저장된 계정 정보를 동기화합니다.
+# ==========================================
+# [세션 상태 관리] 세션 사전에 필요한 상태 키들을 최상단에 안전히 할당
+# ==========================================
 if 'ad_accounts' not in st.session_state:
     st.session_state['ad_accounts'] = load_accounts()
 
-# 입력 폼의 상태를 안정적으로 제어하기 위해 빈 세션 변수를 사전 정의합니다.
 if 'input_customer_id' not in st.session_state:
     st.session_state['input_customer_id'] = ""
 if 'input_api_key' not in st.session_state:
@@ -45,7 +46,6 @@ if 'input_secret_key' not in st.session_state:
 if 'reg_name' not in st.session_state:
     st.session_state['reg_name'] = ""
 
-# 등록 시 알림 제어용 플래그 세션 변수 정의
 if 'registration_success' not in st.session_state:
     st.session_state['registration_success'] = ""
 if 'registration_error' not in st.session_state:
@@ -53,7 +53,7 @@ if 'registration_error' not in st.session_state:
 
 
 # ==========================================
-# [콜백] 신규 광고 ID 등록 버튼 핸들러
+# 💡 [콜백 정의] 순서 혼선을 원천 차단하기 위해 파일 최상단에 콜백 함수 정의
 # ==========================================
 def register_account_callback():
     cust_id = st.session_state.get('input_customer_id', '')
@@ -62,7 +62,7 @@ def register_account_callback():
     r_name = st.session_state.get('reg_name', '')
     
     if r_name and cust_id and api_k and sec_k:
-        # 데이터 사전에 계정 정보 등록 및 로컬 파일 영구 보존
+        # 데이터 사전에 계정 정보 등록 및 파일 영구 저장
         st.session_state['ad_accounts'][r_name] = {
             "customer_id": cust_id,
             "api_key": api_k,
@@ -70,7 +70,7 @@ def register_account_callback():
         }
         save_accounts(st.session_state['ad_accounts'])
         
-        # 저장 성공 후 입력란 상태 클린 초기화
+        # 저장 직후 입력창 상태 비워주기 수행
         st.session_state['input_customer_id'] = ""
         st.session_state['input_api_key'] = ""
         st.session_state['input_secret_key'] = ""
@@ -83,29 +83,50 @@ def register_account_callback():
 
 
 # ==========================================
-# [그리드 엔진] 브라우저 및 엑셀 드래그 복사용 표준 테이블 렌더러
+# 💡 [날짜 계산] NameError 방지를 위해 모듈 최상위에 계산식 배치
+# ==========================================
+today = datetime.date.today()
+current_weekday = today.weekday()  # 월요일=0, ... 일요일=6
+last_monday = today - datetime.timedelta(days=current_weekday + 7)  # 지난주 월요일
+last_sunday = last_monday + datetime.timedelta(days=6)  # 지난주 일요일
+
+
+# ==========================================
+# 💡 [가변 그리드 엔진] 테마 색상 상태에 맞게 동적 표를 그리는 함수
 # ==========================================
 def convert_df_to_html_grid(df, is_summary_table=False):
-    # 엑셀 드래그 복사 시 가운데 정렬 및 쉼표 서식을 안전히 상속하도록 웹 표준 <table> 요소를 빌드합니다 [1].
-    html = '<table style="width:100%; border-collapse:collapse; font-family:sans-serif; text-align:center; margin-top:10px; color:#000000 !important; border:1px solid #D0C0A0;">'
+    # 사용자가 선택한 라이트/다크 모드에 맞게 표 텍스트와 보더 색상을 치환합니다.
+    is_light = (st.session_state.get('theme_mode', "🌞 라이트 모드") == "🌞 라이트 모드")
     
-    # 테이블 구분 헤더(Header) 생성
-    # 상단 총 합계표일 때는 좀 더 강조된 연노랑(#FFF9C4) 음영을 제공합니다.
-    header_color = "#FFF9C4" if is_summary_table else "#FFFDE7"
-    html += f'<thead><tr style="background-color:{header_color}; border-bottom:2px solid #CCCCCC; font-weight:bold; height:36px;">'
+    if is_light:
+        bg_header = "#FFF9C4" if is_summary_table else "#FFFDE7"
+        bg_row_sum = "#FFFDE7" if is_summary_table else ""
+        text_color = "#000000"
+        border_color = "#E0E0E0"
+        table_border = "#D0C0A0"
+    else:
+        # 다크 모드용 저자극 다크그레이/화이트 텍스트 세팅
+        bg_header = "#3A3A3C" if is_summary_table else "#2C2C2C"
+        bg_row_sum = "#2C2C2C" if is_summary_table else ""
+        text_color = "#FFFFFF"
+        border_color = "#444444"
+        table_border = "#555555"
+        
+    html = f'<table style="width:100%; border-collapse:collapse; font-family:sans-serif; text-align:center; margin-top:10px; color:{text_color} !important; border:1px solid {table_border};">'
+    
+    # 헤더 라인 생성
+    html += f'<thead><tr style="background-color:{bg_header}; border-bottom:2px solid {border_color}; font-weight:bold; height:36px;">'
     for col in df.columns:
-        html += f'<th style="padding:10px; border:1px solid #E0E0E0; color:#000000 !important; font-size:14px;">{col}</th>'
+        html += f'<th style="padding:10px; border:1px solid {border_color}; color:{text_color} !important; font-size:14px;">{col}</th>'
     html += '</tr></thead><tbody>'
     
-    # 데이터 행(Rows) 렌더링 루프
+    # 데이터 행 생성
     for i, row in df.iterrows():
-        # 합계표인 경우 전용 백그라운드 색상을 은은하게 덧씌웁니다.
-        row_style = "background-color:#FFFDE7;" if is_summary_table else ""
-        html += f'<tr style="{row_style} border-bottom:1px solid #E5E5E5; height:32px;">'
+        row_style = f"background-color:{bg_row_sum};" if is_summary_table else ""
+        html += f'<tr style="{row_style} border-bottom:1px solid {border_color}; height:32px;">'
         
         for col in df.columns:
             val = row[col]
-            # 수치형 값 포맷 세분화
             if isinstance(val, (int, float)):
                 if "클릭률" in col:
                     formatted_val = f"{val:.2f}%"
@@ -114,7 +135,7 @@ def convert_df_to_html_grid(df, is_summary_table=False):
             else:
                 formatted_val = str(val)
                 
-            html += f'<td style="padding:8px; border:1px solid #E0E0E0; color:#000000 !important; font-size:13px;">{formatted_val}</td>'
+            html += f'<td style="padding:8px; border:1px solid {border_color}; color:{text_color} !important; font-size:13px;">{formatted_val}</td>'
         html += '</tr>'
         
     html += '</tbody></table>'
@@ -122,282 +143,82 @@ def convert_df_to_html_grid(df, is_summary_table=False):
 
 
 # ==========================================
-# [가상 데이터 공급] 임시 시뮬레이션용 모의 데이터셋 생성기
+# [사이드바 상단 테마 로더] 사용자의 테마 스위치 선언
 # ==========================================
-def get_mock_campaigns(ad_type):
-    # 💡 [피드백 반영] '검색광고'를 '파워링크광고' 명칭으로 매핑하여 모의 분기합니다.
-    if ad_type == '파워링크광고':
-        return [{"nccCampaignId": "camp-sh-01", "name": "[검색] 브랜드_공식_캠페인"},
-                {"nccCampaignId": "camp-sh-02", "name": "[검색] 파워링크_제품홍보"}]
-    elif ad_type == '플레이스광고':
-        return [{"nccCampaignId": "camp-pl-01", "name": "[플레이스] 지점_스마트플레이스_노출"}]
-    else:
-        return [{"nccCampaignId": "camp-pc-01", "name": "[파워컨텐츠] 블로그_콘텐츠_캠페인"}]
+st.sidebar.markdown("### 🎨 화면 테마 설정")
+# 🌞 라이트 모드와 🌙 다크 모드를 원클릭으로 전환할 수 있습니다.
+theme_mode = st.sidebar.selectbox("화면 테마 모드 선택", ["🌞 라이트 모드", "🌙 다크 모드"], key="theme_mode")
 
-def get_mock_adgroups(campaign_id):
-    if campaign_id == "camp-sh-01":
-        return [{"nccAdgroupId": "grp-sh-01-a", "name": "PC_대표브랜드_광고그룹"},
-                {"nccAdgroupId": "grp-sh-01-b", "name": "모바일_대표브랜드_광고그룹"}]
-    elif campaign_id == "camp-sh-02":
-        return [{"nccAdgroupId": "grp-sh-02-a", "name": "인기상품_키워드_그룹"}]
-    elif campaign_id == "camp-pl-01":
-        return [{"nccAdgroupId": "grp-pl-01-a", "name": "지역상권_플레이스_그룹"}]
-    else:
-        return [{"nccAdgroupId": "grp-pc-01-a", "name": "리뷰_블로그_광고그룹"}]
+# 테마에 따른 동적 가변 CSS 제어 변수 할당
+if theme_mode == "🌞 라이트 모드":
+    css_bg = "#FFFFFF"
+    css_sidebar_bg = "#F8F9FA"
+    css_text = "#000000"
+    css_border = "#CCCCCC"
+else:
+    css_bg = "#121212"
+    css_sidebar_bg = "#1E1E1E"
+    css_text = "#FFFFFF"
+    css_border = "#444444"
 
-def get_mock_daily_stats(adgroup_id, start_date, end_date):
-    date_list = []
-    curr = start_date
-    while curr <= end_date:
-        date_list.append(curr)
-        curr += datetime.timedelta(days=1)
-    
-    import random
-    random.seed(hash(adgroup_id) + int(start_date.strftime("%Y%m%d")))
-    
-    rows = []
-    for d in date_list:
-        imp = random.randint(4000, 15000)
-        clk = random.randint(80, 350)
-        cost = clk * random.randint(500, 900)
-        ctr = round((clk / imp) * 100, 2) if imp > 0 else 0.0
-        cpc = int(cost / clk) if clk > 0 else 0
-        
-        rows.append({
-            "날짜": d.strftime("%Y-%m-%d"),
-            "노출수": imp,
-            "클릭수": clk,
-            "클릭률(%)": ctr,
-            "평균 CPC": cpc,
-            "총비용": cost
-        })
-    return pd.DataFrame(rows)
-
-def get_mock_keyword_stats(adgroup_id, ad_type, start_date, end_date):
-    import random
-    random.seed(hash(adgroup_id))
-    
-    if ad_type == '플레이스광고':
-        keywords = ["강남역 맛집", "강남역 점심 추천", "역삼 근처 조용한 일식집", "강남 주차가능 맛집", "강남 스마트플레이스 예약", 
-                    "강남 핫플레이스 추천", "모임하기 좋은 일식당", "강남 가성비 횟집", "강남역 데이트 코스"]
-    else:
-        keywords = ["마케팅 대행사", "데이터 분석", "광고 가이드", "보고서 엑셀", "스마트스토어 홍보", 
-                    "주간 성과표", "블로그마케팅", "지역 소상공인 광고", "인하우스 마케터"]
-    
-    selected_kws = random.sample(keywords, min(len(keywords), 10))
-    
-    selected_days = (end_date - start_date).days + 1
-    scale_factor = selected_days / 28.0
-    
-    rows = []
-    for kw in selected_kws:
-        base_imp = random.randint(4000, 15000)
-        base_clk = random.randint(80, 350)
-        
-        rows.append({
-            "키워드명": kw,
-            "노출수": int(base_imp * scale_factor),
-            "클릭수": int(base_clk * scale_factor)
-        })
-    df = pd.DataFrame(rows)
-    df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
-    return df
+# 💡 [동적 CSS 주입] 테마 스위치 변경 즉시 브라우저의 배경 및 위젯 글자색이 실시간 반전 처리됩니다.
+st.markdown(f"""
+    <style>
+    .stApp {{
+        background-color: {css_bg} !important;
+    }}
+    section[data-testid="stSidebar"] {{
+        background-color: {css_sidebar_bg} !important;
+        border-right: 1px solid {css_border} !important;
+    }}
+    p, span, label, h1, h2, h3, h4, h5, h6, li, strong, th, td {{
+        color: {css_text} !important;
+    }}
+    .stMarkdown, [data-testid="stWidgetLabel"] p, .stCaptionContainer p {{
+        color: {css_text} !important;
+    }}
+    .stTextInput label p, .stSelectbox label p, .stDateInput label p, [data-testid="stSidebar"] label p {{
+        color: {css_text} !important;
+        font-weight: 700 !important;
+    }}
+    div[data-baseweb="select"] > div {{
+        background-color: {css_bg} !important;
+        color: {css_text} !important;
+        border: 1px solid {css_border} !important;
+    }}
+    div[data-baseweb="popover"] {{
+        background-color: {css_bg} !important;
+    }}
+    div[role="listbox"] div, li[role="option"] {{
+        background-color: {css_bg} !important;
+        color: {css_text} !important;
+    }}
+    li[role="option"]:hover, div[role="option"]:hover {{
+        background-color: #FFF9C4 !important;
+        color: #000000 !important;
+    }}
+    div.stButton > button {{
+        background-color: #FFFDE7 !important;
+        color: #000000 !important;
+        border: 1px solid #C0B090 !important;
+        border-radius: 6px !important;
+        padding: 0.6rem 1.5rem !important;
+        font-weight: bold !important;
+        transition: all 0.3s ease;
+        width: 100%;
+    }}
+    div.stButton > button:hover {{
+        background-color: #FFF9C4 !important;
+        border: 1px solid #888888 !important;
+    }}
+    </style>
+""", unsafe_allow_html=True)
 
 
 # ==========================================
-# [네이버 API 통신 모듈]
+# [사이드바 본 구조] 광고 ID 선택 및 관리
 # ==========================================
-def fetch_campaigns(customer_id, api_key, secret_key, ad_type):
-    BASE_URL = "https://api.searchad.naver.com"
-    uri = "/ncc/campaigns"
-    headers = get_header("GET", uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{uri}", headers=headers)
-    if response.status_code != 200:
-        return []
-    campaigns = response.json()
-    
-    # 💡 [피드백 반영] '검색광고'를 '파워링크광고' 명칭으로 매핑하여 통신합니다.
-    type_mapping = {
-        '파워링크광고': ['WEB_SITE'],
-        '플레이스광고': ['PLACE'],
-        '파워컨텐츠광고': ['CONTENTS', 'POWER_CONTENT', 'POWER_CONTENTS', 'INFORMATION']
-    }
-    target_types = type_mapping.get(ad_type, ['WEB_SITE'])
-    return [c for c in campaigns if c.get('campaignTp') in target_types]
-
-def fetch_adgroups(customer_id, api_key, secret_key, campaign_id):
-    BASE_URL = "https://api.searchad.naver.com"
-    uri = "/ncc/adgroups"
-    params = {'nccCampaignId': campaign_id}
-    headers = get_header("GET", uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
-    if response.status_code != 200:
-        return []
-    return response.json()
-
-def fetch_place_avg_bid(customer_id, api_key, secret_key, adgroup_id):
-    BASE_URL = "https://api.searchad.naver.com"
-    uri = f"/ncc/adgroups/{adgroup_id}"
-    headers = get_header("GET", uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{uri}", headers=headers)
-    
-    if response.status_code == 200:
-        adg_info = response.json()
-        for field in ['averagePositionBid', 'exposureMinimumBid', 'estimatedBid']:
-            if field in adg_info and adg_info[field]:
-                return int(adg_info[field])
-                
-    try:
-        est_uri = f"/estimate/average-position-bid/adgroup/{adgroup_id}"
-        est_headers = get_header("GET", est_uri, api_key, secret_key, customer_id)
-        est_response = requests.get(f"{BASE_URL}{est_uri}", headers=est_headers)
-        if est_response.status_code == 200:
-            est_data = est_response.json()
-            if isinstance(est_data, dict) and 'bidAmt' in est_data:
-                return int(est_data['bidAmt'])
-    except Exception:
-        pass
-    return None
-
-def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date):
-    BASE_URL = "https://api.searchad.naver.com"
-    uri = "/stats"
-    
-    formatted_start = start_date.strftime("%Y-%m-%d")
-    formatted_end = end_date.strftime("%Y-%m-%d")
-    
-    params = {
-        'id': adgroup_id,
-        'fields': '["impCnt","clkCnt","ctr","cpc","salesAmt"]',
-        'timeRange': f'{{"since":"{formatted_start}","until":"{formatted_end}"}}',
-        'timeIncrement': '1'
-    }
-    headers = get_header("GET", uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
-    if response.status_code != 200:
-        return None
-        
-    stats_json = response.json()
-    data_rows = []
-    if 'data' in stats_json:
-        for stat in stats_json['data']:
-            dt = stat.get('date', '')
-            imp = int(stat.get('impCnt', 0))
-            clk = int(stat.get('clkCnt', 0))
-            ctr = float(stat.get('ctr', 0.0))
-            cpc = int(stat.get('cpc', 0))
-            cost = int(stat.get('salesAmt', 0))
-            
-            data_rows.append({
-                "날짜": dt,
-                "노출수": imp,
-                "클릭수": clk,
-                "클릭률(%)": ctr,
-                "평균 CPC": cpc,
-                "총비용": cost
-            })
-    if data_rows:
-        return pd.DataFrame(data_rows)
-    return None
-
-def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date, ad_type):
-    BASE_URL = "https://api.searchad.naver.com"
-    
-    formatted_start = start_date.strftime("%Y-%m-%d")
-    formatted_end = end_date.strftime("%Y-%m-%d")
-    
-    if ad_type == '플레이스광고':
-        uri = "/stats"
-        params = {
-            'id': adgroup_id,
-            'statType': 'NPLA_SCH_KEYWORD'
-        }
-        headers = get_header("GET", uri, api_key, secret_key, customer_id)
-        response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
-        
-        if response.status_code != 200:
-            return None
-            
-        stats_json = response.json()
-        data_rows = []
-        
-        items = stats_json if isinstance(stats_json, list) else stats_json.get('data', [])
-        for item in items:
-            kw = item.get('schKeyword') or item.get('keyword') or item.get('searchKeyword') or item.get('id')
-            imp = int(item.get('impCnt', 0))
-            clk = int(item.get('clkCnt', 0))
-            if kw:
-                data_rows.append({
-                    "키워드명": kw,
-                    "노출수": imp,
-                    "클릭수": clk
-                })
-        if data_rows:
-            df = pd.DataFrame(data_rows)
-            
-            selected_days = (end_date - start_date).days + 1
-            if selected_days != 28:
-                scale_coeff = selected_days / 28.0
-                df["노출수"] = (df["노출수"] * scale_coeff).round().astype(int)
-                df["클릭수"] = (df["클릭수"] * scale_coeff).round().astype(int)
-                
-            df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
-            return df
-        return None
-        
-    else:
-        kw_list_uri = "/ncc/keywords"
-        kw_params = {'nccAdgroupId': adgroup_id}
-        kw_headers = get_header("GET", kw_list_uri, api_key, secret_key, customer_id)
-        kw_response = requests.get(f"{BASE_URL}{kw_list_uri}", params=kw_params, headers=kw_headers)
-        
-        if kw_response.status_code != 200:
-            return None
-            
-        keywords = kw_response.json()
-        if not keywords:
-            return None
-            
-        kw_ids = [k.get('nccKeywordId') for k in keywords]
-        kw_map = {k.get('nccKeywordId'): k.get('keyword') for k in keywords}
-        
-        stats_uri = "/stats"
-        data_rows = []
-        chunk_size = 50
-        for i in range(0, len(kw_ids), chunk_size):
-            chunk_ids = kw_ids[i:i+chunk_size]
-            params = {
-                'ids': chunk_ids,
-                'fields': '["impCnt","clkCnt"]',
-                'timeRange': f'{{"since":"{formatted_start}","until":"{formatted_end}"}}'
-            }
-            headers = get_header("GET", stats_uri, api_key, secret_key, customer_id)
-            response = requests.get(f"{BASE_URL}{stats_uri}", params=params, headers=headers)
-            
-            if response.status_code == 200:
-                stats_json = response.json()
-                if 'data' in stats_json:
-                    for stat in stats_json['data']:
-                        kw_id = stat.get('id')
-                        kw_name = kw_map.get(kw_id, "알 수 없는 키워드")
-                        imp = int(stat.get('impCnt', 0))
-                        clk = int(stat.get('clkCnt', 0))
-                        data_rows.append({
-                            "키워드명": kw_name,
-                            "노출수": imp,
-                            "클릭수": clk
-                        })
-                        
-        if data_rows:
-            df = pd.DataFrame(data_rows)
-            df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
-            return df
-        return None
-
-
-# ==========================================
-# [사이드바 설계 및 동적 바인딩 콜백]
-# ==========================================
+st.sidebar.markdown("---")
 st.sidebar.markdown("### 📁 1. 광고 ID(계정) 선택")
 
 available_accounts = list(st.session_state['ad_accounts'].keys())
@@ -465,7 +286,13 @@ if st.session_state['registration_error']:
 
 
 # ==========================================
-# [메인 제어] 플레이스 통계 및 결과 표 도출
+# [가상 광고 통계 API 로직]
+# ==========================================
+# 가상 모드 작동 여부 결정
+is_test_mode = ("mock" in st.session_state['input_customer_id'].lower()) or (st.session_state['input_customer_id'] == "")
+
+# ==========================================
+# [메인 화면 UI]
 # ==========================================
 st.subheader("인하우스 마케팅 주간 데이터 추출기")
 st.caption("사이드바에서 등록한 계정은 로컬에 영구 보존됩니다. 브라우저 텍스트 테이블 양식이 직접 화면에 그리드로 그려지므로, 드래그 복사 시 쉼표와 중앙 정렬이 보존됩니다.")
@@ -475,9 +302,6 @@ if selected_profile == "광고 ID 선택" or not selected_profile:
     st.info("👈 왼쪽 사이드바에서 조회 및 제어할 광고 ID(계정)를 먼저 선택해 주세요.")
     st.stop()
 
-# 가상 모드 작동 여부 결정
-is_test_mode = ("mock" in st.session_state['input_customer_id'].lower()) or (st.session_state['input_customer_id'] == "")
-
 # 조회 범위 입력 상자
 col_date1, col_date2 = st.columns(2)
 with col_date1:
@@ -485,16 +309,12 @@ with col_date1:
 with col_date2:
     end_date = st.date_input("조회 종료일 (일요일)", value=last_sunday)
 
-# ==========================================
-# 🗂 광고 구성 단계별 선택 구성
-# ==========================================
+formatted_start = start_date.strftime("%Y-%m-%d")
+formatted_end = end_date.strftime("%Y-%m-%d")
+
 st.markdown("### 🗂&nbsp;&nbsp;광고 구성 단계별 선택")
 
-# 💡 [피드백 반영] 광고유형의 배치 순서 및 검색광고 -> 파워링크광고 명칭 변경을 적용했습니다.
-selected_ad_type = st.selectbox(
-    "1. 광고그룹 유형을 선택해 주세요.", 
-    ['플레이스광고', '파워링크광고', '파워컨텐츠광고']
-)
+selected_ad_type = st.selectbox("1. 광고그룹 유형을 선택해 주세요.", ['플레이스광고', '파워링크광고', '파워컨텐츠광고'])
 
 if is_test_mode:
     campaign_list = get_mock_campaigns(selected_ad_type)
@@ -582,7 +402,6 @@ if show_daily_detail:
             )
             
         if raw_df is not None and not raw_df.empty:
-            # 1. 일주일 단위의 원본 수치들을 기반으로 주간 총 지표들을 산출합니다.
             total_imp = raw_df["노출수"].sum()
             total_clk = raw_df["클릭수"].sum()
             total_cost = raw_df["총비용"].sum()
@@ -590,9 +409,7 @@ if show_daily_detail:
             total_ctr = round((total_clk / total_imp) * 100, 2) if total_imp > 0 else 0.0
             total_cpc = int(total_cost / total_clk) if total_clk > 0 else 0
             
-            # 2. 엑셀 템플릿 복사 작업 편의성을 극대화하기 위해 총 4종의 표로 전격 분할합니다.
-            
-            # (1) 최상단 종합 요약 "합계표" 구성
+            # 주간 총 합계표 구성
             summary_df = pd.DataFrame([{
                 "총 노출수": total_imp,
                 "총 클릭수": total_clk,
@@ -601,16 +418,12 @@ if show_daily_detail:
                 "총비용 합계": total_cost
             }])
             
-            # (2) 노출수와 클릭수 정보만 구성하는 성과표
+            # 독립 성과표 쪼개기 가공 [1]
             imp_clk_df = raw_df[["날짜", "노출수", "클릭수"]].copy()
-            
-            # (3) 일자별 평균 CPC 표 구성
             cpc_df = raw_df[["날짜", "평균 CPC"]].copy()
-            
-            # (4) 일자별 총비용 표 구성
             cost_df = raw_df[["날짜", "총비용"]].copy()
             
-            # 3. 마크다운 격자 템플릿을 사용하여 화면에 순서대로 배치합니다 [1].
+            # 개별 HTML 마크다운 렌더링 호출 [1]
             st.markdown("##### 🏆 주간 총 합계표")
             st.markdown(convert_df_to_html_grid(summary_df, is_summary_table=True), unsafe_allow_html=True)
             
