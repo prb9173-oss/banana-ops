@@ -210,10 +210,9 @@ def get_header(method, uri, api_key, secret_key, customer_id):
 
 
 # ==========================================
-# [가상 데이터 공급] 임시 시뮬레이션용 모의 데이터셋 생성기 (유형명 변경 반영)
+# [가상 데이터 공급] 임시 시뮬레이션용 모의 데이터셋 생성기
 # ==========================================
 def get_mock_campaigns(ad_type):
-    # 💡 [피드백 반영] '파워링크광고' 명칭에 맞추어 분기를 수정합니다.
     if ad_type == '파워링크광고':
         return [{"nccCampaignId": "camp-sh-01", "name": "[검색] 브랜드_공식_캠페인"},
                 {"nccCampaignId": "camp-sh-02", "name": "[검색] 파워링크_제품홍보"}]
@@ -293,7 +292,7 @@ def get_mock_keyword_stats(adgroup_id, ad_type, start_date, end_date):
 
 
 # ==========================================
-# [네이버 API 통신 모듈] (유형명 변경 반영)
+# [네이버 API 통신 모듈]
 # ==========================================
 def fetch_campaigns(customer_id, api_key, secret_key, ad_type):
     BASE_URL = "https://api.searchad.naver.com"
@@ -304,7 +303,6 @@ def fetch_campaigns(customer_id, api_key, secret_key, ad_type):
         return []
     campaigns = response.json()
     
-    # 💡 [피드백 반영] '파워링크광고' 한글 지칭명에 맞추어 WEB_SITE 형식을 연결합니다.
     type_mapping = {
         '파워링크광고': ['WEB_SITE'],
         '플레이스광고': ['PLACE'],
@@ -575,7 +573,6 @@ with col_date2:
 
 st.markdown("### 🗂&nbsp;&nbsp;광고 구성 단계별 선택")
 
-# 💡 [피드백 반영] 광고유형의 선택 순서를 플레이스광고 ➡️ 파워링크광고 ➡️ 파워컨텐츠광고 로 개편했습니다.
 selected_ad_type = st.selectbox(
     "1. 광고그룹 유형을 선택해 주세요.", 
     ['플레이스광고', '파워링크광고', '파워컨텐츠광고']
@@ -674,7 +671,7 @@ if show_daily_detail:
             total_ctr = round((total_clk / total_imp) * 100, 2) if total_imp > 0 else 0.0
             total_cpc = int(total_cost / total_clk) if total_clk > 0 else 0
             
-            # (1) 최상단 종합 요약 "합계표" 구성
+            # (1) 최상단 종합 요약 "합계표" 구성 (날짜 불필요)
             summary_df = pd.DataFrame([{
                 "총 노출수": total_imp,
                 "총 클릭수": total_clk,
@@ -683,16 +680,18 @@ if show_daily_detail:
                 "총비용 합계": total_cost
             }])
             
-            # (2) 노출수와 클릭수 정보만 구성하는 성과표
-            imp_clk_df = raw_df[["날짜", "노출수", "클릭수"]].copy()
+            # 💡 [피드백 반영] 일별 데이터 테이블을 쪼갤 때, 엑셀 템플릿과의 연치를 위해 '날짜' 열을 완전히 제거하여 수치만 구성합니다.
             
-            # (3) 일자별 평균 CPC 표 구성
-            cpc_df = raw_df[["날짜", "평균 CPC"]].copy()
+            # (2) 노출수와 클릭수 정보 성과표 (날짜 열 제거)
+            imp_clk_df = raw_df[["노출수", "클릭수"]].copy()
             
-            # (4) 일자별 총비용 표 구성
-            cost_df = raw_df[["날짜", "총비용"]].copy()
+            # (3) 일자별 평균 CPC 표 구성 (날짜 열 제거)
+            cpc_df = raw_df[["평균 CPC"]].copy()
             
-            # 마크다운 격자 템플릿을 사용하여 화면에 순서대로 배치합니다.
+            # (4) 일자별 총비용 표 구성 (날짜 열 제거)
+            cost_df = raw_df[["총비용"]].copy()
+            
+            # 격자 템플릿(HTML)을 활용하여 화면에 순서대로 배치합니다.
             st.markdown("##### 🏆 주간 총 합계표")
             st.markdown(convert_df_to_html_grid(summary_df, is_summary_table=True), unsafe_allow_html=True)
             
