@@ -66,7 +66,7 @@ def register_account_callback():
         st.session_state['ad_accounts'][r_name] = {
             "customer_id": cust_id,
             "api_key": api_k,
-            "secret_key": sec_k
+            "secret_key": secret_key
         }
         save_accounts(st.session_state['ad_accounts'])
         
@@ -86,11 +86,10 @@ def register_account_callback():
 # [그리드 엔진] 브라우저 및 엑셀 드래그 복사용 표준 테이블 렌더러
 # ==========================================
 def convert_df_to_html_grid(df, is_summary_table=False):
-    # 엑셀 드래그 복사 시 가운데 정렬 및 쉼표 서식을 안전히 상속하도록 웹 표준 <table> 요소를 빌드합니다.
+    # 웹 표준 <table> 요소를 빌드합니다.
     html = '<table style="width:100%; border-collapse:collapse; font-family:sans-serif; text-align:center; margin-top:10px; color:#000000 !important; border:1px solid #D0C0A0;">'
     
     # 테이블 구분 헤더(Header) 생성
-    # 상단 총 합계표일 때는 좀 더 강조된 연노랑(#FFF9C4) 음영을 제공합니다.
     header_color = "#FFF9C4" if is_summary_table else "#FFFDE7"
     html += f'<thead><tr style="background-color:{header_color}; border-bottom:2px solid #CCCCCC; font-weight:bold; height:36px;">'
     for col in df.columns:
@@ -99,7 +98,6 @@ def convert_df_to_html_grid(df, is_summary_table=False):
     
     # 데이터 행(Rows) 렌더링 루프
     for i, row in df.iterrows():
-        # 합계표인 경우 전용 백그라운드 색상을 은은하게 덧씌웁니다.
         row_style = "background-color:#FFFDE7;" if is_summary_table else ""
         html += f'<tr style="{row_style} border-bottom:1px solid #E5E5E5; height:32px;">'
         
@@ -119,6 +117,64 @@ def convert_df_to_html_grid(df, is_summary_table=False):
         
     html += '</tbody></table>'
     return html
+
+
+# ==========================================
+# 💡 [신규 개발] 엑셀 '주변 서식에 맞추기' 연동 텍스트 추출 가공 모듈
+# ==========================================
+def dataframe_to_tsv_string(df):
+    # 엑셀이 가장 정확하게 표 데이터를 파싱할 수 있는 탭 구분(TSV) 플레인 텍스트 스트링을 생성합니다.
+    lines = []
+    for _, row in df.iterrows():
+        row_vals = []
+        for col in df.columns:
+            val = row[col]
+            if isinstance(val, (int, float)):
+                if "클릭률" in col:
+                    formatted_val = f"{val:.2f}%"
+                else:
+                    formatted_val = f"{int(val):,}"
+            else:
+                formatted_val = str(val)
+            row_vals.append(formatted_val)
+        # 각 셀 데이터들을 탭('\t') 기호로 묶습니다.
+        lines.append("\t".join(row_vals))
+    
+    # 자바스크립트 문자열 매핑 충돌 방지를 위해 이스케이프 부호를 가공 처리합니다.
+    return "\n".join(lines).replace("'", "\\'").replace("\n", "\\n")
+
+
+# 💡 [신규 개발] 표 아래 복사 단추를 매핑하여 통합 렌더링하는 컴포넌트 함수
+def render_table_with_copy_btn(df, title, is_summary_table=False):
+    # 1. 시각용 웹 그리드 HTML 파싱
+    table_html = convert_df_to_html_grid(df, is_summary_table)
+    
+    # 2. 엑셀 연동용 순수 텍스트(TSV) 데이터셋 추출
+    tsv_text = dataframe_to_tsv_string(df)
+    
+    # 3. 주변 서식에 맞춤으로 즉시 클립보드 복사하는 자바스크립트 내장 연노랑 버튼 빌드
+    btn_html = f"""
+    <button onclick="navigator.clipboard.writeText('{tsv_text}')" style="
+        background-color: #FFFDE7;
+        color: #000000;
+        border: 1px solid #C0B090;
+        border-radius: 4px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: bold;
+        cursor: pointer;
+        width: 100%;
+        margin-top: 8px;
+        transition: background-color 0.2s;
+    " onmouseover="this.style.backgroundColor='#FFF9C4'" onmouseout="this.style.backgroundColor='#FFFDE7'">
+        📋 데이터 복사
+    </button>
+    """
+    
+    # 4. 스트림릿 컴포넌트 단위로 출력
+    st.markdown(f"##### {title}")
+    st.markdown(table_html, unsafe_allow_html=True)
+    st.markdown(btn_html, unsafe_allow_html=True)
 
 
 # ==========================================
@@ -573,7 +629,6 @@ with col_date2:
 
 st.markdown("### 🗂&nbsp;&nbsp;광고 구성 단계별 선택")
 
-# 광고유형의 선택 순서 (플레이스광고 ➡️ 파워링크광고 ➡️ 파워컨텐츠광고)
 selected_ad_type = st.selectbox(
     "1. 광고그룹 유형을 선택해 주세요.", 
     ['플레이스광고', '파워링크광고', '파워컨텐츠광고']
@@ -690,28 +745,25 @@ if show_daily_detail:
             # (4) 일자별 총비용 표 구성 (날짜 열 제거)
             cost_df = raw_df[["총비용"]].copy()
             
-            # 💡 최상단 요약 "합계표"는 전체 가로 너비를 넓게 채워 명시적으로 출력합니다.
-            st.markdown("##### 🏆 주간 총 합계표")
-            st.markdown(convert_df_to_html_grid(summary_df, is_summary_table=True), unsafe_allow_html=True)
+            # 💡 최상단 요약 "합계표"는 전체 가로 너비를 넓게 채워 출력합니다.
+            render_table_with_copy_btn(summary_df, "🏆 주간 총 합계표", is_summary_table=True)
             
             st.markdown("###") # 레이아웃 공백 보정
             
-            # 💡 [피드백 적극 반영] 세 개의 표를 가로로 넓게 나열하기 위해 스트림릿 그리드(Columns)를 가동합니다.
+            # 💡 [피드백 반영] 세 개의 일별 데이터를 가로(side-by-side) 구조로 나란히 나열합니다.
             col1, col2, col3 = st.columns(3)
             
+            # 💡 [피드백 반영] 가로 열들의 모든 성과표의 이름을 '일별 데이터'로 통일하여 매핑합니다.
             with col1:
-                st.markdown("##### 📊 일별 데이터 (노출/클릭)")
-                st.markdown(convert_df_to_html_grid(imp_clk_df), unsafe_allow_html=True)
+                render_table_with_copy_btn(imp_clk_df, "📊 일별 데이터")
                 
             with col2:
-                st.markdown("##### 💵 일별 데이터 (평균 CPC)")
-                st.markdown(convert_df_to_html_grid(cpc_df), unsafe_allow_html=True)
+                render_table_with_copy_btn(cpc_df, "💵 일별 데이터")
                 
             with col3:
-                st.markdown("##### 💰 일별 데이터 (총비용)")
-                st.markdown(convert_df_to_html_grid(cost_df), unsafe_allow_html=True)
+                render_table_with_copy_btn(cost_df, "💰 일별 데이터")
             
-            st.success("✅ 조회가 완료되었습니다! 마우스로 필요하신 그리드 표의 수치만 골라 긁으시면 옆의 칸과 엉키지 않고 깔끔하게 복사되어 엑셀 템플릿에 바로 안착합니다.")
+            st.success("✅ 조회가 완료되었습니다! 표 하단의 복사 단추를 클릭하면, 엑셀의 '주변 서식에 맞추기(Match Destination Formatting)'를 한 것처럼 테두리나 배경 색상이 엑셀 양식을 뭉개지 않고 값만 예쁘게 붙어 들어갑니다.")
         else:
             st.error("해당 광고그룹에 해당하는 일별 상세 통계 정보가 부존재합니다.")
 
@@ -735,8 +787,7 @@ if show_keyword_rank:
             )
             
         if kw_df is not None and not kw_df.empty:
-            html_table = convert_df_to_html_grid(kw_df, is_summary_table=False)
-            st.markdown(html_table, unsafe_allow_html=True)
+            render_table_with_copy_btn(kw_df, "📊 키워드별 검색어 성과 (클릭수 상위 10개)", is_summary_table=False)
             st.success("✅ 키워드 성과 보고서 출력이 완료되었습니다! 엑셀 양식에 맞춰 복사해서 사용해 보세요.")
         else:
             st.warning("⚠️ 해당 광고그룹 내에서 수집 가능한 키워드 실적 지표가 존재하지 않습니다.")
