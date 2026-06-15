@@ -66,7 +66,7 @@ def register_account_callback():
         st.session_state['ad_accounts'][r_name] = {
             "customer_id": cust_id,
             "api_key": api_k,
-            "secret_key": secret_key
+            "secret_key": sec_k
         }
         save_accounts(st.session_state['ad_accounts'])
         
@@ -120,7 +120,7 @@ def convert_df_to_html_grid(df, is_summary_table=False):
 
 
 # ==========================================
-# 💡 [신규 개발] 엑셀 '주변 서식에 맞추기' 연동 텍스트 추출 가공 모듈
+# 💡 [정비 완료] 엑셀 '주변 서식에 맞추기' 연동 텍스트 추출 가공 모듈
 # ==========================================
 def dataframe_to_tsv_string(df):
     # 엑셀이 가장 정확하게 표 데이터를 파싱할 수 있는 탭 구분(TSV) 플레인 텍스트 스트링을 생성합니다.
@@ -140,11 +140,11 @@ def dataframe_to_tsv_string(df):
         # 각 셀 데이터들을 탭('\t') 기호로 묶습니다.
         lines.append("\t".join(row_vals))
     
-    # 자바스크립트 문자열 매핑 충돌 방지를 위해 이스케이프 부호를 가공 처리합니다.
-    return "\n".join(lines).replace("'", "\\'").replace("\n", "\\n")
+    # 브라우저 자바스크립트 우회 방식이므로 이스케이프 없이 직관적인 텍스트 개행을 수행합니다.
+    return "\n".join(lines)
 
 
-# 💡 [신규 개발] 표 아래 복사 단추를 매핑하여 통합 렌더링하는 컴포넌트 함수
+# 💡 [피드백 반영] 브라우저 보안 규제를 통과하는 내장 복사기 렌더러 함수
 def render_table_with_copy_btn(df, title, is_summary_table=False):
     # 1. 시각용 웹 그리드 HTML 파싱
     table_html = convert_df_to_html_grid(df, is_summary_table)
@@ -152,29 +152,14 @@ def render_table_with_copy_btn(df, title, is_summary_table=False):
     # 2. 엑셀 연동용 순수 텍스트(TSV) 데이터셋 추출
     tsv_text = dataframe_to_tsv_string(df)
     
-    # 3. 주변 서식에 맞춤으로 즉시 클립보드 복사하는 자바스크립트 내장 연노랑 버튼 빌드
-    btn_html = f"""
-    <button onclick="navigator.clipboard.writeText('{tsv_text}')" style="
-        background-color: #FFFDE7;
-        color: #000000;
-        border: 1px solid #C0B090;
-        border-radius: 4px;
-        padding: 6px 12px;
-        font-size: 12px;
-        font-weight: bold;
-        cursor: pointer;
-        width: 100%;
-        margin-top: 8px;
-        transition: background-color 0.2s;
-    " onmouseover="this.style.backgroundColor='#FFF9C4'" onmouseout="this.style.backgroundColor='#FFFDE7'">
-        📋 데이터 복사
-    </button>
-    """
-    
-    # 4. 스트림릿 컴포넌트 단위로 출력
+    # 3. 타이틀 및 테이블 출력
     st.markdown(f"##### {title}")
     st.markdown(table_html, unsafe_allow_html=True)
-    st.markdown(btn_html, unsafe_allow_html=True)
+    
+    # 4. 💡 접이식 상자 내부에 스트림릿 [Copy] 복사기를 연동하여 브라우저 에러를 완벽히 통제합니다.
+    with st.expander("📋 위 데이터 엑셀 복사용 텍스트", expanded=False):
+        st.caption("우측 상단의 복사(Copy) 단추를 눌러 엑셀에 주변 서식 맞춤으로 간편히 붙여넣기 하실 수 있습니다.")
+        st.code(tsv_text, language="text")
 
 
 # ==========================================
@@ -629,6 +614,7 @@ with col_date2:
 
 st.markdown("### 🗂&nbsp;&nbsp;광고 구성 단계별 선택")
 
+# 광고유형의 선택 순서 (플레이스광고 ➡️ 파워링크광고 ➡️ 파워컨텐츠광고)
 selected_ad_type = st.selectbox(
     "1. 광고그룹 유형을 선택해 주세요.", 
     ['플레이스광고', '파워링크광고', '파워컨텐츠광고']
@@ -745,15 +731,15 @@ if show_daily_detail:
             # (4) 일자별 총비용 표 구성 (날짜 열 제거)
             cost_df = raw_df[["총비용"]].copy()
             
-            # 💡 최상단 요약 "합계표"는 전체 가로 너비를 넓게 채워 출력합니다.
+            # 💡 최상단 요약 "합계표"는 전체 가로 너비를 넓게 채워 렌더링 및 텍스트 전용 복사 단추를 매핑합니다.
             render_table_with_copy_btn(summary_df, "🏆 주간 총 합계표", is_summary_table=True)
             
             st.markdown("###") # 레이아웃 공백 보정
             
-            # 💡 [피드백 반영] 세 개의 일별 데이터를 가로(side-by-side) 구조로 나란히 나열합니다.
+            # 💡 세 개의 일별 데이터를 가로(side-by-side) 구조로 나란히 나열합니다.
             col1, col2, col3 = st.columns(3)
             
-            # 💡 [피드백 반영] 가로 열들의 모든 성과표의 이름을 '일별 데이터'로 통일하여 매핑합니다.
+            # 💡 [피드백 적극 반영] 세 가로 열의 모든 지표 표 명칭을 '일별 데이터'로 통일하여 매핑합니다.
             with col1:
                 render_table_with_copy_btn(imp_clk_df, "📊 일별 데이터")
                 
@@ -763,7 +749,7 @@ if show_daily_detail:
             with col3:
                 render_table_with_copy_btn(cost_df, "💰 일별 데이터")
             
-            st.success("✅ 조회가 완료되었습니다! 표 하단의 복사 단추를 클릭하면, 엑셀의 '주변 서식에 맞추기(Match Destination Formatting)'를 한 것처럼 테두리나 배경 색상이 엑셀 양식을 뭉개지 않고 값만 예쁘게 붙어 들어갑니다.")
+            st.success("✅ 조회가 완료되었습니다! 표 하단의 복사 단축 상자를 열어 [Copy] 단추를 누르면, 엑셀의 '주변 서식에 맞추기'를 한 것처럼 테두리나 배경 색상이 엑셀 양식을 뭉개지 않고 순수 텍스트(값)만 예쁘게 붙어 들어갑니다.")
         else:
             st.error("해당 광고그룹에 해당하는 일별 상세 통계 정보가 부존재합니다.")
 
