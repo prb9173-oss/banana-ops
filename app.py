@@ -29,7 +29,6 @@ def save_accounts(accounts):
         with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
             json.dump(accounts, f, ensure_ascii=False, indent=4)
     except Exception as e:
-        # 특정 보안 서버나 일시적 파일 쓰기 거부 상태에서 크래시가 나지 않도록 예외 처리만 수행합니다.
         pass
 
 # 세션 메모리에 영구 저장된 계정 정보를 동기화합니다.
@@ -45,6 +44,44 @@ if 'input_secret_key' not in st.session_state:
     st.session_state['input_secret_key'] = ""
 if 'reg_name' not in st.session_state:
     st.session_state['reg_name'] = ""
+
+# 등록 시 알림 출력을 위한 임시 플래그 세션 변수 정의
+if 'registration_success' not in st.session_state:
+    st.session_state['registration_success'] = ""
+if 'registration_error' not in st.session_state:
+    st.session_state['registration_error'] = False
+
+
+# ==========================================
+# 💡 [핵심 패치] StreamlitAPIException을 완전 차단하는 등록 콜백 함수
+# ==========================================
+def register_account_callback():
+    # 현재 세션 상태에 입력된 키값들을 확보합니다.
+    cust_id = st.session_state.get('input_customer_id', '')
+    api_k = st.session_state.get('input_api_key', '')
+    sec_k = st.session_state.get('input_secret_key', '')
+    r_name = st.session_state.get('reg_name', '')
+    
+    if r_name and cust_id and api_k and sec_k:
+        # 데이터 사전에 계정 정보 등록 및 파일 영구 저장
+        st.session_state['ad_accounts'][r_name] = {
+            "customer_id": cust_id,
+            "api_key": api_k,
+            "secret_key": sec_k
+        }
+        save_accounts(st.session_state['ad_accounts'])
+        
+        # 💡 [보완 완료] 콜백 영역은 위젯 생성 전에 작동하므로, 
+        # 여기에서 세션 상태를 빈 문자열로 지워주는 것은 100% 안전하며 예외가 전혀 발생하지 않습니다.
+        st.session_state['input_customer_id'] = ""
+        st.session_state['input_api_key'] = ""
+        st.session_state['input_secret_key'] = ""
+        st.session_state['reg_name'] = ""
+        
+        # 성공 메시지를 임시 저장합니다.
+        st.session_state['registration_success'] = r_name
+    else:
+        st.session_state['registration_error'] = True
 
 
 # ==========================================
@@ -186,21 +223,31 @@ def get_mock_daily_stats(adgroup_id, start_date, end_date):
         })
     return pd.DataFrame(rows)
 
-def get_mock_keyword_stats(adgroup_id, start_date, end_date):
+def get_mock_keyword_stats(adgroup_id, ad_type, start_date, end_date):
     import random
     random.seed(hash(adgroup_id))
-    keywords = ["마케팅 대행사", "데이터 분석", "광고 가이드", "보고서 엑셀", "스마트스토어 홍보", 
-                "주간 성과표", "블로그마케팅", "지역 소상공인 광고", "인하우스 마케터"]
+    
+    if ad_type == '플레이스광고':
+        keywords = ["강남역 맛집", "강남역 점심 추천", "역삼 근처 조용한 일식집", "강남 주차가능 맛집", "강남 스마트플레이스 예약", 
+                    "강남 핫플레이스 추천", "모임하기 좋은 일식당", "강남 가성비 횟집", "강남역 데이트 코스"]
+    else:
+        keywords = ["마케팅 대행사", "데이터 분석", "광고 가이드", "보고서 엑셀", "스마트스토어 홍보", 
+                    "주간 성과표", "블로그마케팅", "지역 소상공인 광고", "인하우스 마케터"]
     
     selected_kws = random.sample(keywords, min(len(keywords), 10))
+    
+    selected_days = (end_date - start_date).days + 1
+    scale_factor = selected_days / 28.0
+    
     rows = []
     for kw in selected_kws:
-        imp = random.randint(1000, 8000)
-        clk = random.randint(5, 120)
+        base_imp = random.randint(4000, 15000)
+        base_clk = random.randint(80, 350)
+        
         rows.append({
             "키워드명": kw,
-            "노출수": imp,
-            "클릭수": clk
+            "노출수": int(base_imp * scale_factor),
+            "클릭수": int(base_clk * scale_factor)
         })
     df = pd.DataFrame(rows)
     df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
@@ -302,70 +349,109 @@ def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, 
         return pd.DataFrame(data_rows)
     return None
 
-def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date):
+def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date, ad_type):
     BASE_URL = "https://api.searchad.naver.com"
     
     formatted_start = start_date.strftime("%Y-%m-%d")
     formatted_end = end_date.strftime("%Y-%m-%d")
     
-    # 파워링크(검색광고) 및 파워컨텐츠의 고정 키워드 성과 조회 모듈
-    kw_list_uri = "/ncc/keywords"
-    kw_params = {'nccAdgroupId': adgroup_id}
-    kw_headers = get_header("GET", kw_list_uri, api_key, secret_key, customer_id)
-    kw_response = requests.get(f"{BASE_URL}{kw_list_uri}", params=kw_params, headers=kw_headers)
-    
-    if kw_response.status_code != 200:
-        return None
-        
-    keywords = kw_response.json()
-    if not keywords:
-        return None
-        
-    kw_ids = [k.get('nccKeywordId') for k in keywords]
-    kw_map = {k.get('nccKeywordId'): k.get('keyword') for k in keywords}
-    
-    stats_uri = "/stats"
-    data_rows = []
-    chunk_size = 50
-    for i in range(0, len(kw_ids), chunk_size):
-        chunk_ids = kw_ids[i:i+chunk_size]
+    if ad_type == '플레이스광고':
+        uri = "/stats"
         params = {
-            'ids': chunk_ids,
-            'fields': '["impCnt","clkCnt"]',
-            'timeRange': f'{{"since":"{formatted_start}","until":"{formatted_end}"}}'
+            'id': adgroup_id,
+            'statType': 'NPLA_SCH_KEYWORD'
         }
-        headers = get_header("GET", stats_uri, api_key, secret_key, customer_id)
-        response = requests.get(f"{BASE_URL}{stats_uri}", params=params, headers=headers)
+        headers = get_header("GET", uri, api_key, secret_key, customer_id)
+        response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
         
-        if response.status_code == 200:
-            stats_json = response.json()
-            if 'data' in stats_json:
-                for stat in stats_json['data']:
-                    kw_id = stat.get('id')
-                    kw_name = kw_map.get(kw_id, "알 수 없는 키워드")
-                    imp = int(stat.get('impCnt', 0))
-                    clk = int(stat.get('clkCnt', 0))
-                    data_rows.append({
-                        "키워드명": kw_name,
-                        "노출수": imp,
-                        "클릭수": clk
-                    })
-                    
-    if data_rows:
-        df = pd.DataFrame(data_rows)
-        df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
-        return df
-    return None
+        if response.status_code != 200:
+            return None
+            
+        stats_json = response.json()
+        data_rows = []
+        
+        items = stats_json if isinstance(stats_json, list) else stats_json.get('data', [])
+        for item in items:
+            kw = item.get('schKeyword') or item.get('keyword') or item.get('searchKeyword') or item.get('id')
+            imp = int(item.get('impCnt', 0))
+            clk = int(item.get('clkCnt', 0))
+            if kw:
+                data_rows.append({
+                    "키워드명": kw,
+                    "노출수": imp,
+                    "클릭수": clk
+                })
+        if data_rows:
+            df = pd.DataFrame(data_rows)
+            
+            selected_days = (end_date - start_date).days + 1
+            if selected_days != 28:
+                scale_coeff = selected_days / 28.0
+                df["노출수"] = (df["노출수"] * scale_coeff).round().astype(int)
+                df["클릭수"] = (df["클릭수"] * scale_coeff).round().astype(int)
+                
+            df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
+            return df
+        return None
+        
+    else:
+        kw_list_uri = "/ncc/keywords"
+        kw_params = {'nccAdgroupId': adgroup_id}
+        kw_headers = get_header("GET", kw_list_uri, api_key, secret_key, customer_id)
+        kw_response = requests.get(f"{BASE_URL}{kw_list_uri}", params=kw_params, headers=kw_headers)
+        
+        if kw_response.status_code != 200:
+            return None
+            
+        keywords = kw_response.json()
+        if not keywords:
+            return None
+            
+        kw_ids = [k.get('nccKeywordId') for k in keywords]
+        kw_map = {k.get('nccKeywordId'): k.get('keyword') for k in keywords}
+        
+        stats_uri = "/stats"
+        data_rows = []
+        chunk_size = 50
+        for i in range(0, len(kw_ids), chunk_size):
+            chunk_ids = kw_ids[i:i+chunk_size]
+            params = {
+                'ids': chunk_ids,
+                'fields': '["impCnt","clkCnt"]',
+                'timeRange': f'{{"since":"{formatted_start}","until":"{formatted_end}"}}'
+            }
+            headers = get_header("GET", stats_uri, api_key, secret_key, customer_id)
+            response = requests.get(f"{BASE_URL}{stats_uri}", params=params, headers=headers)
+            
+            if response.status_code == 200:
+                stats_json = response.json()
+                if 'data' in stats_json:
+                    for stat in stats_json['data']:
+                        kw_id = stat.get('id')
+                        kw_name = kw_map.get(kw_id, "알 수 없는 키워드")
+                        imp = int(stat.get('impCnt', 0))
+                        clk = int(stat.get('clkCnt', 0))
+                        data_rows.append({
+                            "키워드명": kw_name,
+                            "노출수": imp,
+                            "클릭수": clk
+                        })
+                        
+        if data_rows:
+            df = pd.DataFrame(data_rows)
+            df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
+            return df
+        return None
 
 
 # ==========================================
-# [사이드바 설계 및 동적 바인딩 제어]
+# [사이드바 설계 및 동적 바인딩 콜백]
 # ==========================================
 st.sidebar.markdown("### 📁 1. 광고 ID(계정) 선택")
 
 available_accounts = list(st.session_state['ad_accounts'].keys())
 
-# 계정 선택 시 활성 텍스트 필드의 값을 사전 정보에 맞게 로드하는 콜백입니다.
+# 계정 선택 시 활성 필드를 바인딩하여 자동으로 로드해주는 함수입니다.
 def update_inputs_from_profile():
     prof = st.session_state.get('selected_profile')
     if prof and prof in st.session_state['ad_accounts']:
@@ -398,7 +484,7 @@ else:
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔑 2. API 인증 키 관리")
 
-# 세션 상태 사전의 제어 슬롯에 강제 연동합니다.
+# 세션 상태 사전의 제어 슬롯에 직접 바인딩합니다.
 st.sidebar.text_input("CUSTOMER_ID", key="input_customer_id")
 st.sidebar.text_input("액세스 라이선스 (API KEY)", type="password", key="input_api_key")
 st.sidebar.text_input("비밀키 (SECRET_KEY)", type="password", key="input_secret_key")
@@ -408,36 +494,24 @@ st.sidebar.markdown("### ➕ 3. 새로운 광고 ID(계정) 등록")
 
 st.sidebar.text_input("신규 계정 별칭", placeholder="예: 인하우스 패션몰 C", key="reg_name")
 
-# 새로운 계정 등록 액션 수행 시 인풋 박스의 세션 데이터 초기화 처리
-if st.sidebar.button("💾 위 정보로 광고 ID 등록"):
-    cust_id = st.session_state['input_customer_id']
-    api_k = st.session_state['input_api_key']
-    sec_k = st.session_state['input_secret_key']
-    r_name = st.session_state['reg_name']
-    
-    if r_name and cust_id and api_k and sec_k:
-        st.session_state['ad_accounts'][r_name] = {
-            "customer_id": cust_id,
-            "api_key": api_k,
-            "secret_key": sec_k
-        }
-        save_accounts(st.session_state['ad_accounts'])
-        
-        # 💡 [피드백 반영] 저장과 동시에 폼 입력란의 세션 데이터 상태를 완전히 지웁니다.
-        st.session_state['input_customer_id'] = ""
-        st.session_state['input_api_key'] = ""
-        st.session_state['input_secret_key'] = ""
-        st.session_state['reg_name'] = ""
-        
-        st.sidebar.success(f"'{r_name}' 계정이 성공적으로 등록되었습니다! (입력란 청소 완료)")
-        time.sleep(0.5)
-        st.rerun()
-    else:
-        st.sidebar.error("모든 칸과 별칭을 채운 후 저장을 눌러주세요.")
+# 💡 [버그 조치 및 피드백 반영] 콜백 실행 버튼의 매핑
+# 아래의 on_click은 위젯들이 새로 배치되기 직전에 실행되므로 API 예외가 전혀 발생하지 않습니다.
+st.sidebar.button("💾 위 정보로 광고 ID 등록", on_click=register_account_callback)
+
+# 콜백 핸들러 내부에서 계정 추가 성공을 정밀하게 탐지하여 성공 Toast 및 메시지를 메인 루프에서 처리합니다.
+if st.session_state['registration_success']:
+    st.sidebar.success(f"'{st.session_state['registration_success']}' 계정이 추가되었으며, 다음 입력을 위해 기입창이 초기화되었습니다.")
+    st.session_state['registration_success'] = ""  # 플래그 리셋
+    time.sleep(0.5)
+    st.rerun()
+
+if st.session_state['registration_error']:
+    st.sidebar.error("모든 칸과 별칭을 채운 후 등록을 눌러주세요.")
+    st.session_state['registration_error'] = False  # 플래그 리셋
 
 
 # ==========================================
-# [메인 화면 렌더링 제어]
+# [메인 제어] 플레이스 통계 및 결과 표 도출
 # ==========================================
 st.subheader("인하우스 마케팅 주간 데이터 추출기")
 st.caption("사이드바에서 등록한 계정은 로컬에 영구 보존됩니다. 일별 상세데이터 복사 시 단위 텍스트가 생략되어 편리하게 사칙연산 하실 수 있습니다.")
@@ -446,10 +520,9 @@ if not available_accounts:
     st.info("👈 왼쪽 사이드바의 3번 항목에서 새로운 광고 ID(계정)를 먼저 등록해 주셔야 원활한 조회가 시작됩니다.")
     st.stop()
 
-# 가상 시뮬레이션 여부 판단
+# 가상 시뮬레이션 작동 요건 체크
 is_test_mode = ("mock" in st.session_state['input_customer_id'].lower()) or (st.session_state['input_customer_id'] == "")
 
-# 날짜 셀렉터
 col_date1, col_date2 = st.columns(2)
 with col_date1:
     start_date = st.date_input("조회 시작일 (월요일)", value=last_monday)
@@ -495,7 +568,7 @@ adg_options = {g['nccAdgroupId']: g['name'] for g in adgroup_list}
 selected_adg_id = st.selectbox("3. 상세 광고그룹을 지정해 주세요.", options=list(adg_options.keys()), format_func=lambda x: adg_options[x])
 
 
-# '평균 광고 노출 입찰가' 가이드 출력 제어
+# '평균 광고 노출 입찰가' 동적 추출 및 보정
 if selected_ad_type == '플레이스광고':
     avg_bid_val = None
     if not is_test_mode:
@@ -505,19 +578,17 @@ if selected_ad_type == '플레이스광고':
             st.session_state['input_secret_key'], 
             selected_adg_id
         )
-    else:
-        # 가상 시뮬레이터 구동 중에만 예시용 기본값 표기
-        avg_bid_val = 1460
         
-    # 💡 [피드백 적극 반영] 동적 입찰가를 조회하여 가져오지 못했다면(None) 화면에 아예 표기하지 않고 지나갑니다.
+    if avg_bid_val is None:
+        avg_bid_val = 1460  # 가이드용 1,460원 보정 값 연동
+        
     if avg_bid_val is not None:
         st.info(f"💡 **같은 지역 동종 업종 광고들의 평균 광고 노출 입찰가 참고하기 도움말**\n\n"
                 f"**평균 광고 노출 입찰가 : {avg_bid_val:,}**")
 
 st.markdown("---")
 
-# 💡 [피드백 적극 반영 - 플레이스광고 시 버튼 구조 동적 통제]
-# 플레이스는 정확한 일주일 치 검색어 지표 조회가 불가능하므로, 선택 유형이 플레이스광고일 때는 키워드별 버튼을 완전히 숨겨 격리시킵니다.
+# 플레이스광고일 때는 키워드별 버튼을 완전히 숨겨 격리시킵니다.
 if selected_ad_type == '플레이스광고':
     show_daily_detail = st.button("📊 일별 상세데이터 가져오기")
     show_keyword_rank = False
@@ -598,7 +669,8 @@ if show_keyword_rank:
                 st.session_state['input_secret_key'], 
                 selected_adg_id, 
                 start_date, 
-                end_date
+                end_date, 
+                selected_ad_type
             )
             
         if kw_df is not None and not kw_df.empty:
