@@ -137,7 +137,7 @@ def dataframe_to_tsv_string(df):
     for _, row in df.iterrows():
         row_vals = []
         for col in df.columns:
-            # 💡 복사용 평문을 만들 때 '날짜' 열은 철저히 스킵하여 수치 데이터만 기입하게 제어합니다.
+            # 복사용 평문을 만들 때 '날짜' 열은 철저히 스킵하여 수치 데이터만 기입하게 제어합니다.
             if col == "날짜":
                 continue
             val = row[col]
@@ -157,7 +157,7 @@ def dataframe_to_tsv_string(df):
 def render_table_and_button_html(df, title, is_summary_table=False):
     # 화면용 테이블에는 날짜 정보가 정상 포함된 채로 렌더링을 진행합니다.
     table_html = convert_df_to_html_grid(df, is_summary_table)
-    # 복사용 소스에서는 텍스트에 포함된 '날짜' 정보가 위의 조건절을 거쳐 완벽히 배제됩니다.
+    # 복사용 소스에서는 텍스트에 포함된 '날짜' 정보가 조건절을 거쳐 완벽히 배제됩니다.
     tsv_text = dataframe_to_tsv_string(df)
     
     unique_id = str(int(time.time() * 1000)) + str(abs(hash(title)))
@@ -239,7 +239,7 @@ def get_table_iframe_height(df, is_summary=False):
         return max(calc_height, 120)
 
 
-# [정합 보강 완료] 공백 제목("") 전달 시 위 공간을 침범하지 않도록 예외 처리
+# 공백 제목("") 전달 시 위 공간을 침범하지 않도록 예외 처리
 def render_table_with_copy_btn(df, title, is_summary_table=False):
     if title:
         st.markdown(f"##### {title}")
@@ -384,6 +384,8 @@ def fetch_place_avg_bid(customer_id, api_key, secret_key, adgroup_id):
         pass
     return None
 
+
+# 💡 [정합 디버깅 및 고도화 완료] 네이버 API 사양상 동적으로 반환되는 다중 키값 및 하이픈 정형화 방어 로직 설계
 def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date):
     BASE_URL = "https://api.searchad.naver.com"
     uri = "/stats"
@@ -406,7 +408,27 @@ def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, 
     data_rows = []
     if 'data' in stats_json:
         for stat in stats_json['data']:
-            dt = stat.get('date', '')
+            
+            # 💡 [피드백 반영] API 응답 스키마에 따라 유기적으로 반환될 수 있는 모든 유효 날짜 키를 우선순위대로 탐색합니다.
+            dt_raw = ""
+            for key in ['date', 'dateYmd', 'dateStr', 'businessDate']:
+                if key in stat and stat[key]:
+                    dt_raw = str(stat[key]).strip()
+                    break
+                    
+            # 💡 [피드백 반영] 날짜 데이터 정형화(YYYY-MM-DD 형식) 포맷팅 가공
+            dt = ""
+            if dt_raw:
+                # ISO 8601 타임스탬프 형식 처리 (예: "2026-06-08T00:00:00" -> "2026-06-08")
+                if "T" in dt_raw:
+                    dt_raw = dt_raw.split("T")[0]
+                    
+                # 하이픈 없는 YYYYMMDD 형태 복구 (예: "20260608" -> "2026-06-08")
+                if len(dt_raw) == 8 and dt_raw.isdigit():
+                    dt = f"{dt_raw[:4]}-{dt_raw[4:6]}-{dt_raw[6:]}"
+                else:
+                    dt = dt_raw
+            
             imp = int(stat.get('impCnt', 0))
             clk = int(stat.get('clkCnt', 0))
             ctr = float(stat.get('ctr', 0.0))
@@ -521,7 +543,7 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
 
 
 # ==========================================
-# 💡 [사이드바 설계 및 Secrets 연동] 로컬 연동 및 영구저장 데이터 완전 소거
+# [사이드바 설계 및 Secrets 연동] 로컬 연동 및 영구저장 데이터 완전 소거
 # ==========================================
 st.sidebar.markdown("### 📁 1. 광고 ID(계정) 선택")
 
@@ -561,7 +583,7 @@ selected_profile = st.sidebar.selectbox(
     on_change=update_inputs_from_profile
 )
 
-# 💡 피드백을 반영하여 수동 입력창, 등록/삭제/수정 단추 등을 완벽하게 공백 소거했습니다.
+# 계정 선택 정보 동기화 세팅
 input_customer_id = st.session_state.get('input_customer_id', '')
 input_api_key = st.session_state.get('input_api_key', '')
 input_secret_key = st.session_state.get('input_secret_key', '')
@@ -698,10 +720,10 @@ if show_daily_detail:
                 "총비용 합계": total_cost
             }])
             
-            # 💡 [피드백 반영] 좌측 끝단 배치를 위한 독립된 '날짜' 표 구성
+            # 좌측 끝단 배치를 위한 독립된 '날짜' 표 구성
             date_df = raw_df[["날짜"]].copy()
             
-            # 💡 [피드백 반영] 우측 세 단에는 날짜 정보를 완벽히 차단하고 오직 실무 수치 정보만 수집한 데이터프레임 구성
+            # 우측 세 단에는 날짜 정보를 완벽히 차단하고 오직 실무 수치 정보만 수집한 데이터프레임 구성
             imp_clk_df = raw_df[["노출수", "클릭수"]].copy()
             cpc_df = raw_df[["평균 CPC"]].copy()
             cost_df = raw_df[["총비용"]].copy()
@@ -711,10 +733,10 @@ if show_daily_detail:
             
             st.markdown("###") # 레이아웃 공백 보정
             
-            # 💡 [피드백 반영] 개별 제목 호출 대신 가로 컬럼 시작 직전 상단에 한 번만 대제목 명시
+            # 개별 제목 호출 대신 가로 컬럼 시작 직전 상단에 한 번만 대제목 명시
             st.markdown("#### 📊 일별 데이터")
             
-            # 💡 [피드백 반영] 지정해주신 비율인 1:1.2:1.2:1.2 로 4단 그리드를 구축합니다.
+            # 지정해주신 비율인 1:1.2:1.2:1.2 로 4단 그리드를 구축합니다.
             col_date, col1, col2, col3 = st.columns([1, 1.2, 1.2, 1.2])
             
             # (1) 첫 번째 col_date 단 : 오직 '날짜' 정보만 가진 표 렌더링 (복사 단추 미노출)
