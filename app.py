@@ -75,9 +75,82 @@ current_weekday = today.weekday()
 last_monday = today - datetime.timedelta(days=current_weekday + 7)
 last_sunday = last_monday + datetime.timedelta(days=6)
 
+ACCOUNTS_FILE = "accounts.json"
+
 
 # ==========================================
-# [인증] 네이버 검색광고 API HMAC 서명
+# [데이터 영구 저장] accounts.json 파일 읽기/쓰기 모듈
+# ==========================================
+def load_accounts():
+    default_accounts = {}
+    if os.path.exists(ACCOUNTS_FILE):
+        try:
+            with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return default_accounts
+    return default_accounts
+
+def save_accounts(accounts):
+    try:
+        with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(accounts, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        pass
+
+# 세션 메모리에 영구 저장된 계정 정보를 동기화합니다.
+if 'ad_accounts' not in st.session_state:
+    st.session_state['ad_accounts'] = load_accounts()
+
+# 입력 폼의 상태를 제어하기 위한 세션 변수 사전 정의
+if 'input_customer_id' not in st.session_state:
+    st.session_state['input_customer_id'] = ""
+if 'input_api_key' not in st.session_state:
+    st.session_state['input_api_key'] = ""
+if 'input_secret_key' not in st.session_state:
+    st.session_state['input_secret_key'] = ""
+if 'reg_name' not in st.session_state:
+    st.session_state['reg_name'] = ""
+
+# 등록 시 알림 제어용 플래그 세션 변수 정의
+if 'registration_success' not in st.session_state:
+    st.session_state['registration_success'] = ""
+if 'registration_error' not in st.session_state:
+    st.session_state['registration_error'] = False
+
+
+# ==========================================
+# [콜백] 신규 광고 ID 등록 버튼 핸들러
+# ==========================================
+def register_account_callback():
+    cust_id = st.session_state.get('input_customer_id', '')
+    api_k = st.session_state.get('input_api_key', '')
+    sec_k = st.session_state.get('input_secret_key', '')
+    r_name = st.session_state.get('reg_name', '')
+    
+    if r_name and cust_id and api_k and sec_k:
+        # 데이터 사전에 계정 정보 등록 및 로컬 파일 영구 보존
+        st.session_state['ad_accounts'][r_name] = {
+            "customer_id": cust_id,
+            "api_key": api_k,
+            "secret_key": sec_k
+        }
+        save_accounts(st.session_state['ad_accounts'])
+        
+        # 저장 성공 후 입력란 상태 클린 초기화
+        st.session_state['input_customer_id'] = ""
+        st.session_state['input_api_key'] = ""
+        st.session_state['input_secret_key'] = ""
+        st.session_state['reg_name'] = ""
+        st.session_state['selected_profile'] = "광고 ID 선택"
+        
+        st.session_state['registration_success'] = r_name
+    else:
+        st.session_state['registration_error'] = True
+
+
+# ==========================================
+# [인증] 네이버 검색광고 API 공통 서명 및 헤더 구성 모듈
 # ==========================================
 def make_signature(timestamp, method, uri, secret_key):
     message = f"{timestamp}.{method}.{uri}"
@@ -137,7 +210,7 @@ def dataframe_to_tsv_string(df):
     for _, row in df.iterrows():
         row_vals = []
         for col in df.columns:
-            # 💡 복사용 평문을 만들 때 '날짜' 열은 철저히 스킵하여 수치 데이터만 기입하게 제어합니다.
+            # 💡 [피드백 반영] 복사용 평문을 만들 때 '날짜' 열은 철저히 스킵하여 수치 데이터만 기입하게 제어합니다.
             if col == "날짜":
                 continue
             val = row[col]
@@ -155,9 +228,7 @@ def dataframe_to_tsv_string(df):
 
 # [컴포넌트] 고대비 일괄 복사 컴포넌트 템플릿 제어 모듈
 def render_table_and_button_html(df, title, is_summary_table=False):
-    # 화면용 테이블에는 날짜 정보가 정상 포함된 채로 렌더링을 진행합니다.
     table_html = convert_df_to_html_grid(df, is_summary_table)
-    # 복사용 소스에서는 텍스트에 포함된 '날짜' 정보가 위의 조건절을 거쳐 완벽히 배제됩니다.
     tsv_text = dataframe_to_tsv_string(df)
     
     unique_id = str(int(time.time() * 1000)) + str(abs(hash(title)))
@@ -181,7 +252,7 @@ def render_table_and_button_html(df, title, is_summary_table=False):
             display: block !important;
             transition: all 0.2s;
         " onmouseover="this.style.backgroundColor='#FFF9C4'" onmouseout="this.style.backgroundColor='#FFFDE7'">
-            📋 이 표 데이터 복사하기 (주변 서식 맞춤)
+            📋 복사하기
         </button>
         <textarea id="area-{unique_id}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
     </div>
@@ -214,12 +285,12 @@ def render_table_and_button_html(df, title, is_summary_table=False):
     
     function showCopied() {{
         var btn = document.getElementById('btn-{unique_id}');
-        btn.innerHTML = '✅ 복사 완료 (엑셀에 바로 붙여넣으세요)';
+        btn.innerHTML = '✅ 복사 완료';
         btn.style.backgroundColor = '#C8E6C9'; 
         btn.style.borderColor = '#4CAF50';
         btn.style.color = '#000000';
         setTimeout(function() {{
-            btn.innerHTML = '📋 이 표 데이터 복사하기 (주변 서식 맞춤)';
+            btn.innerHTML = '📋 복사하기';
             btn.style.backgroundColor = '#FFFDE7';
             btn.style.borderColor = '#000000';
         }}, 2000);
@@ -239,9 +310,10 @@ def get_table_iframe_height(df, is_summary=False):
         return max(calc_height, 120)
 
 
-# 마스터 복사 컴포넌트 렌더러 함수
+# 💡 [정합 보강 완료] 공백 제목("") 전달 시 위 공간을 침범하지 않도록 예외 처리
 def render_table_with_copy_btn(df, title, is_summary_table=False):
-    st.markdown(f"##### {title}")
+    if title:
+        st.markdown(f"##### {title}")
     html_content = render_table_and_button_html(df, title, is_summary_table)
     iframe_height = get_table_iframe_height(df, is_summary_table)
     st.components.v1.html(html_content, height=iframe_height, scrolling=False)
@@ -520,11 +592,10 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
 
 
 # ==========================================
-# 💡 [사이드바 설계 및 Secrets 연동] 로컬 연동 및 영구저장 데이터 완전 소거
+# [사이드바 설계 및 Secrets 연동] 로컬 연동 및 영구저장 데이터 완전 소거
 # ==========================================
 st.sidebar.markdown("### 📁 1. 광고 ID(계정) 선택")
 
-# st.secrets로부터 유효한 광고 ID 정보 사전을 가진 키들만 안전하게 필터링하여 리스트업합니다.
 available_accounts = []
 try:
     for k in st.secrets.keys():
@@ -537,7 +608,7 @@ except Exception:
 
 options_list = ["광고 ID 선택"] + available_accounts
 
-# 💡 [피드백 반영] 사이드바 셀렉트박스 변경 핸들러 수정 (st.secrets 로부터 동적 파싱)
+# 콜백 핸들러 정의
 def update_inputs_from_profile():
     prof = st.session_state.get('selected_profile')
     if prof == "광고 ID 선택":
@@ -561,7 +632,6 @@ selected_profile = st.sidebar.selectbox(
     on_change=update_inputs_from_profile
 )
 
-# 💡 사이드바 입력 및 등록 UI 영역을 영구 청소했습니다.
 input_customer_id = st.session_state.get('input_customer_id', '')
 input_api_key = st.session_state.get('input_api_key', '')
 input_secret_key = st.session_state.get('input_secret_key', '')
@@ -590,7 +660,6 @@ with col_date2:
 
 st.markdown("### 🗂&nbsp;&nbsp;광고 구성 단계별 선택")
 
-# 광고유형의 선택 순서 (플레이스광고 ➡️ 파워링크광고 ➡️ 파워컨텐츠광고)
 selected_ad_type = st.selectbox(
     "1. 광고그룹 유형을 선택해 주세요.", 
     ['플레이스광고', '파워링크광고', '파워컨텐츠광고']
@@ -698,36 +767,47 @@ if show_daily_detail:
                 "총비용 합계": total_cost
             }])
             
-            # 💡 [피드백 적극 반영] 화면 대조 및 시인성을 보존하기 위해, 분할 성과표의 첫 번째 열로 '날짜'를 다시 포함하여 가공합니다.
+            # 💡 [피드백 반영] 좌측 끝단 배치를 위한 독립된 '날짜' 표 구성
+            date_df = raw_df[["날짜"]].copy()
             
-            # (2) 노출수와 클릭수 정보 성과표 (날짜 열 포함)
-            imp_clk_df = raw_df[["날짜", "노출수", "클릭수"]].copy()
+            # 💡 [피드백 반영] 우측 세 단에는 날짜 정보를 완벽히 차단하고 오직 실무 수치 정보만 수집한 데이터프레임 구성
+            imp_clk_df = raw_df[["노출수", "클릭수"]].copy()
+            cpc_df = raw_df[["평균 CPC"]].copy()
+            cost_df = raw_df[["총비용"]].copy()
             
-            # (3) 일자별 평균 CPC 표 구성 (날짜 열 포함)
-            cpc_df = raw_df[["날짜", "평균 CPC"]].copy()
-            
-            # (4) 일자별 총비용 표 구성 (날짜 열 포함)
-            cost_df = raw_df[["날짜", "총비용"]].copy()
-            
-            # 최상단 요약 "합계표"는 전체 가로 너비를 넓게 채워 렌더링 및 텍스트 전용 복사 단축 버튼을 매핑합니다.
+            # 최상단 요약 "합계표"는 전체 가로 너비를 넓게 채워 렌더링 및 복사 버튼을 매핑합니다.
             render_table_with_copy_btn(summary_df, "🏆 주간 총 합계표", is_summary_table=True)
             
             st.markdown("###") # 레이아웃 공백 보정
             
-            # 세 개의 일별 데이터를 가로(side-by-side) 구조로 나란히 나열합니다.
-            col1, col2, col3 = st.columns(3)
+            # 💡 [피드백 반영] 개별 제목 호출 대신 가로 컬럼 시작 직전 상단에 한 번만 대제목 명시
+            st.markdown("#### 📊 일별 데이터")
             
-            # 세 가로 열의 모든 지표 표 명칭을 '일별 데이터'로 통일하여 매핑합니다.
+            # 💡 [피드백 반영] 지정해주신 비율인 1:1.2:1.2:1.2 로 4단 그리드를 구축합니다.
+            col_date, col1, col2, col3 = st.columns([1, 1.2, 1.2, 1.2])
+            
+            # (1) 첫 번째 col_date 단 : 오직 '날짜' 정보만 가진 표 렌더링 (복사 단추 미노출)
+            with col_date:
+                date_html = convert_df_to_html_grid(date_df, is_summary_table=False)
+                wrapped_date_html = f"""
+                <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
+                    {date_html}
+                </div>
+                """
+                # 버튼을 제외한 순수 테이블 영역 높이(~280px)에 맞춰 스크롤바 없이 단독 출력합니다.
+                st.components.v1.html(wrapped_date_html, height=280, scrolling=False)
+                
+            # (2) 우측 3개 단 : 날짜가 완전 배제된 순수 수치 표 매핑 (복사 버튼 유지, 제목 파라미터는 ""로 차단)
             with col1:
-                render_table_with_copy_btn(imp_clk_df, "📊 일별 데이터")
+                render_table_with_copy_btn(imp_clk_df, "", is_summary_table=False)
                 
             with col2:
-                render_table_with_copy_btn(cpc_df, "💵 일별 데이터")
+                render_table_with_copy_btn(cpc_df, "", is_summary_table=False)
                 
             with col3:
-                render_table_with_copy_btn(cost_df, "💰 일별 데이터")
+                render_table_with_copy_btn(cost_df, "", is_summary_table=False)
             
-            st.success("✅ 조회가 완료되었습니다! 표 바로 밑단에 준비된 검정색 테두리의 복사하기 단축버튼을 누르시면, 날짜가 제외된 순수 지표 데이터만 엑셀에 주변 서식 맞춤으로 간편하게 붙여넣어집니다.")
+            st.success("✅ 조회가 완료되었습니다! 복사 단추를 클릭하면 '날짜'가 제외된 수치 데이터만 엑셀 양식에 주변 서식 맞춤으로 완벽하게 연동됩니다.")
         else:
             st.error("해당 광고그룹에 해당하는 일별 상세 통계 정보가 부존재합니다.")
 
