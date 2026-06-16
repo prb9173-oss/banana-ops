@@ -137,7 +137,7 @@ def dataframe_to_tsv_string(df):
     for _, row in df.iterrows():
         row_vals = []
         for col in df.columns:
-            # 💡 복사용 평문을 만들 때 '날짜' 열은 철저히 스킵하여 수치 데이터만 기입하게 제어합니다.
+            # 복사용 평문을 만들 때 '날짜' 열은 철저히 스킵하여 수치 데이터만 기입하게 제어합니다.
             if col == "날짜":
                 continue
             val = row[col]
@@ -155,7 +155,9 @@ def dataframe_to_tsv_string(df):
 
 # [컴포넌트] 고대비 일괄 복사 컴포넌트 템플릿 제어 모듈
 def render_table_and_button_html(df, title, is_summary_table=False):
+    # 화면용 테이블에는 날짜 정보가 정상 포함된 채로 렌더링을 진행합니다.
     table_html = convert_df_to_html_grid(df, is_summary_table)
+    # 복사용 소스에서는 텍스트에 포함된 '날짜' 정보가 조건절을 거쳐 완벽히 배제됩니다.
     tsv_text = dataframe_to_tsv_string(df)
     
     unique_id = str(int(time.time() * 1000)) + str(abs(hash(title)))
@@ -403,10 +405,9 @@ def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, 
     stats_json = response.json()
     data_rows = []
     if 'data' in stats_json:
-        # 💡 [피드백 반영] 네이버 서버가 전달하는 날짜 필드의 결측/미동작 에러를 원천 차단하기 위해 
+        # 네이버 서버가 전달하는 날짜 필드의 결측 에러를 방지하기 위해 
         # python의 enumerate를 통해 i 인덱스를 확보하고 시작일자로부터 1일씩 순회하며 독자적으로 날짜를 생성 및 바인딩합니다.
         for i, stat in enumerate(stats_json['data']):
-            # 시작일(start_date)로부터 i일만큼 더해 포맷팅합니다.
             dt = (start_date + datetime.timedelta(days=i)).strftime("%Y-%m-%d")
             
             imp = int(stat.get('impCnt', 0))
@@ -523,7 +524,7 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
 
 
 # ==========================================
-# 💡 [사이드바 설계 및 Secrets 연동] 로컬 연동 및 영구저장 데이터 완전 소거
+# [사이드바 설계 및 Secrets 연동] 로컬 연동 및 영구저장 데이터 완전 소거
 # ==========================================
 st.sidebar.markdown("### 📁 1. 광고 ID(계정) 선택")
 
@@ -563,7 +564,7 @@ selected_profile = st.sidebar.selectbox(
     on_change=update_inputs_from_profile
 )
 
-# 💡 피드백을 반영하여 수동 입력창, 등록/삭제/수정 단추 등을 완벽하게 공백 소거했습니다.
+# 수동 입력창, 등록/삭제/수정 단추 등을 완벽하게 소거했습니다.
 input_customer_id = st.session_state.get('input_customer_id', '')
 input_api_key = st.session_state.get('input_api_key', '')
 input_secret_key = st.session_state.get('input_secret_key', '')
@@ -573,7 +574,7 @@ input_secret_key = st.session_state.get('input_secret_key', '')
 # [메인 제어] 플레이스 통계 및 결과 표 도출
 # ==========================================
 st.subheader("인하우스 마케팅 주간 데이터 추출기")
-st.caption("사이드바에서 등록한 계정은 로컬에 영구 보존됩니다. 브라우저 텍스트 테이블 양식이 직접 화면에 그리드로 그려지므로, 드래그 복사 시 쉼표와 중앙 정렬이 보존됩니다.")
+st.caption("사이드바에서 등록한 계정은 안전한 st.secrets 연동을 통하여 불러옵니다. 브라우저 텍스트 테이블 양식이 직접 화면에 그리드로 그려지므로, 드래그 복사 시 쉼표와 중앙 정렬이 보존됩니다.")
 
 # 계정 선택 가이드 노출
 if selected_profile == "광고 ID 선택" or not selected_profile:
@@ -700,15 +701,15 @@ if show_daily_detail:
                 "총비용 합계": total_cost
             }])
             
-            # 💡 [피드백 반영] 좌측 끝단 배치를 위한 독립된 '날짜' 표 구성
+            # 좌측 끝단 배치를 위한 독립된 '날짜' 표 구성
             date_df = raw_df[["날짜"]].copy()
             
-            # 💡 [피드백 반영] 우측 세 단에는 날짜 정보를 완벽히 차단하고 오직 실무 수치 정보만 수집한 데이터프레임 구성
+            # 우측 세 단에는 날짜 정보를 완벽히 차단하고 오직 실무 수치 정보만 수집한 데이터프레임 구성
             imp_clk_df = raw_df[["노출수", "클릭수"]].copy()
             cpc_df = raw_df[["평균 CPC"]].copy()
             cost_df = raw_df[["총비용"]].copy()
             
-            # 최상단 요약 "합계표"는 전체 가로 너비를 넓게 채워 렌더링 및 복사 버튼을 매핑합니다.
+            # 최상단 요약 "합계표"는 전체 가로 너비를 넓게 채워 렌더링 및 텍스트 전용 복사 단축 버튼을 매핑합니다.
             render_table_with_copy_btn(summary_df, "🏆 주간 총 합계표", is_summary_table=True)
             
             st.markdown("###") # 레이아웃 공백 보정
@@ -716,7 +717,7 @@ if show_daily_detail:
             # 💡 [피드백 반영] 개별 제목 호출 대신 가로 컬럼 시작 직전 상단에 한 번만 대제목 명시
             st.markdown("#### 📊 일별 데이터")
             
-            # 💡 [피드백 반영] 지정해주신 비율인 1:1.2:1.2:1.2 로 4단 그리드를 구축합니다.
+            # 지정해주신 비율인 1:1.2:1.2:1.2 로 4단 그리드를 구축합니다.
             col_date, col1, col2, col3 = st.columns([1, 1.2, 1.2, 1.2])
             
             # (1) 첫 번째 col_date 단 : 오직 '날짜' 정보만 가진 표 렌더링 (복사 단추 미노출)
@@ -727,8 +728,9 @@ if show_daily_detail:
                     {date_html}
                 </div>
                 """
-                # 버튼을 제외한 순수 테이블 영역 높이(~280px)에 맞춰 스크롤바 없이 단독 출력합니다.
-                st.components.v1.html(wrapped_date_html, height=280, scrolling=False)
+                # 💡 [버그 조치 및 피드백 반영] 잘림 현상 방지를 위해 다른 컬럼들과 동일한 동적 높이를 계산하여 June 14일까지 선명히 출력합니다.
+                iframe_height = get_table_iframe_height(date_df, is_summary=False)
+                st.components.v1.html(wrapped_date_html, height=iframe_height, scrolling=False)
                 
             # (2) 우측 3개 단 : 날짜가 완전 배제된 순수 수치 표 매핑 (복사 버튼 유지, 제목 파라미터는 ""로 차단)
             with col1:
