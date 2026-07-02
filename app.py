@@ -38,9 +38,54 @@ st.markdown("""
         color: #000000 !important;
         border: 1px solid #CCCCCC !important;
     }
+    
+    /* 💡 [날짜 선택기 달력 팝오버 - 화이트 테마 강제 보정 스타일] */
     div[data-baseweb="popover"] {
         background-color: #FFFFFF !important;
+        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.15) !important;
+        border: 1px solid #E0E0E0 !important;
     }
+    div[data-baseweb="calendar"] {
+        background-color: #FFFFFF !important;
+    }
+    /* 달력 헤더 (연도, 월 드롭다운 및 레이블 텍스트) */
+    div[data-baseweb="calendar"] header, 
+    div[data-baseweb="calendar"] p, 
+    div[data-baseweb="calendar"] span, 
+    div[data-baseweb="calendar"] label,
+    div[data-baseweb="calendar"] select {
+        color: #000000 !important;
+        background-color: #FFFFFF !important;
+    }
+    /* 연/월 이동용 좌우 화살표 아이콘 색상 */
+    div[data-baseweb="calendar"] svg {
+        fill: #000000 !important;
+        color: #000000 !important;
+    }
+    /* 요일 이름 (Su, Mo, Tu 등) 및 날짜 텍스트 기본 검정색 처리 */
+    div[data-baseweb="calendar"] [role="gridcell"] div, 
+    div[data-baseweb="calendar"] [role="presentation"] div {
+        color: #000000 !important;
+    }
+    /* 날짜 숫자 버튼 기본 화이트 배경 제어 */
+    div[data-baseweb="calendar"] button {
+        background-color: #FFFFFF !important;
+        color: #000000 !important;
+    }
+    /* 오늘 날짜 및 마우스 호버(hover) 상태 피드백 */
+    div[data-baseweb="calendar"] button:hover {
+        background-color: #F0F2F6 !important;
+        color: #000000 !important;
+    }
+    /* 최종 선택된 날짜 (동그란 선택 링) 강조색 - 가독성 향상을 위해 딥네이비 매치 */
+    div[data-baseweb="calendar"] button[aria-selected="true"] {
+        background-color: #0A2540 !important;
+        color: #FFFFFF !important;
+    }
+    div[data-baseweb="calendar"] button[aria-selected="true"] div {
+        color: #FFFFFF !important;
+    }
+    
     div[role="listbox"] div, li[role="option"] {
         background-color: #FFFFFF !important;
         color: #000000 !important;
@@ -62,7 +107,7 @@ st.markdown("""
         color: #000000 !important;
     }
     
-    /* 💡 데이터 추출 버튼 외곽선 제거, 딥 네이비(#0A2540) 채우기, 텍스트 줄바꿈 방지 및 자동 너비 수립 */
+    /* 데이터 추출 버튼 외곽선 제거, 딥 네이비(#0A2540) 채우기, 텍스트 줄바꿈 방지 및 자동 너비 수립 */
     div.stButton > button {
         background-color: #0A2540 !important; /* 신뢰감 있는 딥 네이비 배경 */
         border: none !important; /* 외곽 테두리 선 완전 제거 */
@@ -473,7 +518,7 @@ def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, 
     data_rows = []
     
     if 'data' in stats_json:
-        # 안전성 강화: API 응답 배열 크기와 조회 날짜 간의 매핑 정합성 검증 추가
+        # 안전성 강화: API 응답 데이터 개수 체크를 통한 안전 장치
         data_len = len(stats_json['data'])
         expected_days = (end_date - start_date).days + 1
         
@@ -516,6 +561,7 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
         headers = get_header("GET", uri, api_key, secret_key, customer_id)
         response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
         
+        # 날짜 범위 수집 조건에 오류가 나는 버전일 시 기본 30일 범위로 재호출 시도
         if response.status_code != 200:
             params.pop('timeRange', None)
             response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
