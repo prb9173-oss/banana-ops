@@ -10,7 +10,7 @@ import pandas as pd
 # ==========================================
 # [다크모드 원천 방어] 스트림릿 최초 로드 즉시 화이트 테마 고정
 # ==========================================
-# 💡 [피드백 반영] 앱 타이틀을 '광고 데이터 추출기'로 간결하게 변경했습니다.
+# 💡 [피드백 반영] 앱 제목을 '광고 데이터 추출기'로 변경했습니다.
 st.set_page_config(page_title="광고 데이터 추출기", layout="centered")
 
 st.markdown("""
@@ -76,6 +76,10 @@ current_weekday = today.weekday()
 last_monday = today - datetime.timedelta(days=current_weekday + 7)
 last_sunday = last_monday + datetime.timedelta(days=6)
 
+# 오류 분석 로그 저장을 위한 세션 상태 세팅
+if 'api_error_msg' not in st.session_state:
+    st.session_state['api_error_msg'] = ""
+
 
 # ==========================================
 # [인증] 네이버 검색광고 API HMAC 서명
@@ -103,14 +107,16 @@ def get_header(method, uri, api_key, secret_key, customer_id):
 def convert_df_to_html_grid(df, is_summary_table=False):
     html = '<table style="width:100%; border-collapse:collapse; font-family:sans-serif; text-align:center; margin-top:10px; color:#000000 !important; border:1px solid #D0C0A0;">'
     
-    header_color = "#FFF9C4" if is_summary_table else "#FFFDE7"
+    # 💡 [피드백 적극 반영] 날짜 조회 표가 검은색으로 보이는 현상을 해결하기 위해, 요약표가 아닐 경우 명시적인 흰색 배경(#FFFFFF)을 선언합니다.
+    header_color = "#FFF9C4" if is_summary_table else "#FFFFFF"
     html += f'<thead><tr style="background-color:{header_color}; border-bottom:2px solid #CCCCCC; font-weight:bold; height:36px;">'
     for col in df.columns:
         html += f'<th style="padding:10px; border:1px solid #E0E0E0; color:#000000 !important; font-size:14px;">{col}</th>'
     html += '</tr></thead><tbody>'
     
     for i, row in df.iterrows():
-        row_style = "background-color:#FFFDE7;" if is_summary_table else ""
+        # 데이터 행의 가시성 보존을 위해 셀 배경색 역시 화이트로 격리합니다.
+        row_style = "background-color:#FFFDE7;" if is_summary_table else "background-color:#FFFFFF;"
         html += f'<tr style="{row_style} border-bottom:1px solid #E5E5E5; height:32px;">'
         
         for col in df.columns:
@@ -138,7 +144,6 @@ def dataframe_to_tsv_string(df):
     for _, row in df.iterrows():
         row_vals = []
         for col in df.columns:
-            # 복사용 평문을 만들 때 '날짜' 열은 철저히 스킵하여 수치 데이터만 기입하게 제어합니다.
             if col == "날짜":
                 continue
             val = row[col]
@@ -156,9 +161,7 @@ def dataframe_to_tsv_string(df):
 
 # [컴포넌트] 고대비 일괄 복사 컴포넌트 템플릿 제어 모듈
 def render_table_and_button_html(df, title, is_summary_table=False):
-    # 화면용 테이블에는 날짜 정보가 정상 포함된 채로 렌더링을 진행합니다.
     table_html = convert_df_to_html_grid(df, is_summary_table)
-    # 복사용 소스에서는 텍스트에 포함된 '날짜' 정보가 조건절을 거쳐 완벽히 배제됩니다.
     tsv_text = dataframe_to_tsv_string(df)
     
     unique_id = str(int(time.time() * 1000)) + str(abs(hash(title)))
@@ -230,24 +233,36 @@ def render_table_and_button_html(df, title, is_summary_table=False):
     return html_code
 
 
-# 💡 [피드백 반영] 표 규격에 따른 실시간 높이 보정 수식 상향 패치 (잘림 현상 완전히 해결)
+# 💡 [피드백 보강 패치] 세로 잘림 현상을 해결하기 위해 패딩 영역 높이 산출 공식을 대폭 늘렸습니다.
 def get_table_iframe_height(df, is_summary=False):
     row_count = len(df)
     if is_summary:
-        return 220  # 합계표 가상 높이를 220px로 넉넉하게 확장합니다.
+        return 220  # 합계표 가상 높이를 220px로 여유롭게 상향 조정
     else:
-        # 행별 높이를 35px로 넓히고 하단 마진 여백을 140px로 늘려 복사 버튼이 무조건 잘림 없이 출력되게 수정했습니다.
+        # 각 행 35px + 보조 마진 140px로 확장 적용하여 잘림 현상을 완전 복구합니다.
         calc_height = 40 + (35 * row_count) + 140
         return max(calc_height, 160)
 
 
-# 공백 제목("") 전달 시 위 공간을 침범하지 않도록 예외 처리
-def render_table_with_copy_btn(df, title, is_summary_table=False):
+# 💡 [피드백 적극 반영] 주간 총 합계표에 복사하기 단추를 노출하지 않도록 로직 분기 적용
+def render_table_with_copy_btn(df, title, is_summary_table=False, show_copy_btn=True):
     if title:
         st.markdown(f"##### {title}")
-    html_content = render_table_and_button_html(df, title, is_summary_table)
-    iframe_height = get_table_iframe_height(df, is_summary_table)
-    st.components.v1.html(html_content, height=iframe_height, scrolling=False)
+    
+    # 💡 합계표의 경우 복사단추를 제거하고 표만 안전하게 표출합니다.
+    if show_copy_btn:
+        html_content = render_table_and_button_html(df, title, is_summary_table)
+        iframe_height = get_table_iframe_height(df, is_summary_table)
+        st.components.v1.html(html_content, height=iframe_height, scrolling=False)
+    else:
+        table_html = convert_df_to_html_grid(df, is_summary_table)
+        wrapped_html = f"""
+        <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
+            {table_html}
+        </div>
+        """
+        iframe_height = 36 + (32 * len(df)) + 20
+        st.components.v1.html(wrapped_html, height=iframe_height, scrolling=False)
 
 
 # ==========================================
@@ -340,7 +355,10 @@ def fetch_campaigns(customer_id, api_key, secret_key, ad_type):
     uri = "/ncc/campaigns"
     headers = get_header("GET", uri, api_key, secret_key, customer_id)
     response = requests.get(f"{BASE_URL}{uri}", headers=headers)
+    
+    # 💡 [피드백 반영] 조회가 비정상 처리되었을 때, 응답 코드를 포함해 즉각 실패 원인 메시지를 주입합니다.
     if response.status_code != 200:
+        st.session_state['api_error_msg'] = f"캠페인 데이터 연동 과정에서 통신 응답 오류가 발생했습니다. (HTTP {response.status_code}): {response.text}"
         return []
     campaigns = response.json()
     
@@ -358,7 +376,10 @@ def fetch_adgroups(customer_id, api_key, secret_key, campaign_id):
     params = {'nccCampaignId': campaign_id}
     headers = get_header("GET", uri, api_key, secret_key, customer_id)
     response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
+    
+    # 💡 [피드백 반영] 조회가 비정상 처리되었을 때 실패 원인 기입
     if response.status_code != 200:
+        st.session_state['api_error_msg'] = f"광고그룹 목록을 연동하는 데 실패했습니다. (HTTP {response.status_code}): {response.text}"
         return []
     return response.json()
 
@@ -401,14 +422,15 @@ def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, 
     }
     headers = get_header("GET", uri, api_key, secret_key, customer_id)
     response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
+    
+    # 💡 [피드백 반영] 조회가 비정상 처리되었을 때 실패 원인 기입
     if response.status_code != 200:
+        st.session_state['api_error_msg'] = f"일자별 세부 실적 통계를 가져오는 과정에서 오류가 발생했습니다. (HTTP {response.status_code}): {response.text}"
         return None
         
     stats_json = response.json()
     data_rows = []
     if 'data' in stats_json:
-        # 네이버 서버가 전달하는 날짜 필드의 결측 에러를 방지하기 위해 
-        # python의 enumerate를 통해 i 인덱스를 확보하고 시작일자로부터 1일씩 순회하며 독자적으로 날짜를 생성 및 바인딩합니다.
         for i, stat in enumerate(stats_json['data']):
             dt = (start_date + datetime.timedelta(days=i)).strftime("%Y-%m-%d")
             
@@ -445,7 +467,13 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
         headers = get_header("GET", uri, api_key, secret_key, customer_id)
         response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
         
+        # 날짜 범위 수집 조건에 오류가 나는 버전일 시 기본 30일 범위로 재호출 시도
         if response.status_code != 200:
+            params.pop('timeRange', None)
+            response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
+            
+        if response.status_code != 200:
+            st.session_state['api_error_msg'] = f"플레이스 키워드 성과를 가져오는 과정에서 오류가 발생했습니다. (HTTP {response.status_code}): {response.text}"
             return None
             
         stats_json = response.json()
@@ -482,6 +510,7 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
         kw_response = requests.get(f"{BASE_URL}{kw_list_uri}", params=kw_params, headers=kw_headers)
         
         if kw_response.status_code != 200:
+            st.session_state['api_error_msg'] = f"광고 키워드 목록을 수집하는 데 실패했습니다. (HTTP {kw_response.status_code}): {kw_response.text}"
             return None
             
         keywords = kw_response.json()
@@ -526,9 +555,8 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
 
 
 # ==========================================
-# 💡 [사이드바 설계 및 Secrets 연동] 로컬 연동 및 영구저장 데이터 완전 소거
+# [사이드바 설계 및 Secrets 연동] 로컬 연동 및 영구저장 데이터 완전 소거
 # ==========================================
-# 💡 [피드백 반영] 사이드바 타이틀 명칭을 '광고 계정 선택'으로 교정합니다.
 st.sidebar.markdown("### 📁 광고 계정 선택")
 
 available_accounts = []
@@ -556,14 +584,13 @@ def update_inputs_from_profile():
         st.session_state['input_api_key'] = keys["api_key"]
         st.session_state['input_secret_key'] = keys["secret_key"]
     
-    # 💡 [피드백 반영] 계정이 변경되는 시점에 항상 광고그룹 유형 셀렉트박스를 '플레이스광고'로 원위치합니다.
+    # 계정이 변경되는 시점에 항상 광고그룹 유형 셀렉트박스를 '플레이스광고'로 원위치합니다.
     st.session_state['selected_ad_type'] = '플레이스광고'
 
 if 'selected_profile' not in st.session_state:
     st.session_state['selected_profile'] = "광고 ID 선택"
     update_inputs_from_profile()
 
-# 💡 [피드백 반영] 불필요한 기재 및 헬퍼 텍스트를 제거하여 정교하게 세팅합니다.
 selected_profile = st.sidebar.selectbox(
     "조회할 광고 계정을 선택해 주세요.", 
     options=options_list,
@@ -580,7 +607,7 @@ input_secret_key = st.session_state.get('input_secret_key', '')
 # ==========================================
 # [메인 제어] 플레이스 통계 및 결과 표 도출
 # ==========================================
-# 💡 [피드백 반영] 메인 타이틀을 '광고 데이터 추출기'로 갱신하고 불필요한 캡션 텍스트는 완전히 삭제했습니다.
+# 💡 [피드백 반영] 앱의 대제목을 '광고 데이터 추출기'로 간결히 변경했습니다.
 st.subheader("광고 데이터 추출기")
 
 # 계정 선택 가이드 노출
@@ -594,16 +621,19 @@ is_test_mode = ("mock" in str(input_customer_id).lower()) or (input_customer_id 
 # 조회 범위 입력 상자
 col_date1, col_date2 = st.columns(2)
 with col_date1:
-    start_date = st.date_input("조회 시작일 (월요일)", value=last_monday)
+    # 💡 [피드백 반영] 요일 텍스트를 완전히 배제했습니다.
+    start_date = st.date_input("조회 시작일", value=last_monday)
 with col_date2:
-    end_date = st.date_input("조회 종료일 (일요일)", value=last_sunday)
+    # 💡 [피드백 반영] 요일 텍스트를 완전히 배제했습니다.
+    end_date = st.date_input("조회 종료일", value=last_sunday)
 
-st.markdown("### 🗂&nbsp;&nbsp;광고 구성 단계별 선택")
+# 💡 [피드백 반영] 대제목 이모지를 삭제하고 '광고 유형'으로 개편했습니다.
+st.markdown("### 광고 유형")
 
 # 광고유형의 선택 순서 (플레이스광고 ➡️ 파워링크광고 ➡️ 파워컨텐츠광고)
-# 💡 [피드백 반영] 계정 선택 시 강제 리셋을 처리하기 위해 session state key를 함께 바인딩합니다.
+# 💡 [피드백 반영] '광고그룹'으로 라벨 변경
 selected_ad_type = st.selectbox(
-    "1. 광고그룹 유형을 선택해 주세요.", 
+    "광고그룹", 
     ['플레이스광고', '파워링크광고', '파워컨텐츠광고'],
     key='selected_ad_type'
 )
@@ -619,11 +649,17 @@ else:
     )
 
 if not campaign_list:
-    st.warning("⚠️ 선택하신 유형에 부합하는 캠페인이 확인되지 않습니다.")
+    # 💡 [피드백 반영] 실시간 연동 에러가 축적되어 있는지 체크하고 진단 문구를 방출합니다.
+    if st.session_state.get('api_error_msg'):
+        st.error(f"❌ 데이터 추출 과정에서 아래와 같은 원인으로 실패했습니다:\n\n{st.session_state['api_error_msg']}")
+        st.session_state['api_error_msg'] = ""  # 리셋
+    else:
+        st.warning("선택하신 유형에 부합하는 캠페인이 확인되지 않습니다.")
     st.stop()
 
+# 💡 [피드백 반영] '캠페인'으로 라벨 변경
 camp_options = {c['nccCampaignId']: c['name'] for c in campaign_list}
-selected_camp_id = st.selectbox("2. 캠페인을 지정해 주세요.", options=list(camp_options.keys()), format_func=lambda x: camp_options[x])
+selected_camp_id = st.selectbox("캠페인", options=list(camp_options.keys()), format_func=lambda x: camp_options[x])
 
 if is_test_mode:
     adgroup_list = get_mock_adgroups(selected_camp_id)
@@ -636,11 +672,16 @@ else:
     )
 
 if not adgroup_list:
-    st.warning("⚠️ 지정된 캠페인 하위에 개설된 광고그룹이 존재하지 않습니다.")
+    if st.session_state.get('api_error_msg'):
+        st.error(f"❌ 데이터 추출 과정에서 아래와 같은 원인으로 실패했습니다:\n\n{st.session_state['api_error_msg']}")
+        st.session_state['api_error_msg'] = ""
+    else:
+        st.warning("지정된 캠페인 하위에 개설된 광고그룹이 존재하지 않습니다.")
     st.stop()
 
+# 💡 [피드백 반영] '상세 광고그룹'으로 라벨 변경
 adg_options = {g['nccAdgroupId']: g['name'] for g in adgroup_list}
-selected_adg_id = st.selectbox("3. 상세 광고그룹을 지정해 주세요.", options=list(adg_options.keys()), format_func=lambda x: adg_options[x])
+selected_adg_id = st.selectbox("상세 광고그룹", options=list(adg_options.keys()), format_func=lambda x: adg_options[x])
 
 
 # '평균 광고 노출 입찰가' 가이드 연동
@@ -662,25 +703,21 @@ if selected_ad_type == '플레이스광고':
 
 st.markdown("---")
 
-# 플레이스광고일 때는 키워드 탭 완전 차단 격리
-if selected_ad_type == '플레이스광고':
-    show_daily_detail = st.button("📊 일별 상세데이터 가져오기")
-    show_keyword_rank = False
-else:
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        show_daily_detail = st.button("📊 일별 상세데이터 가져오기")
-    with col_btn2:
-        show_keyword_rank = st.button("🔑 키워드별 성과(상위 10개) 가져오기")
+# 💡 [피드백 반영] 버튼 2개를 단 하나인 '데이터 추출' 버튼으로 병합합니다.
+show_data = st.button("데이터 추출")
 
 st.markdown("###")
 
 
 # ==========================================
-# [액션 1] 일별 상세데이터 그리드 분할 가로 나열(HTML) 출력
+# [데이터 추출 액션 시작]
 # ==========================================
-if show_daily_detail:
-    with st.spinner("일자별 성과 데이터를 분석 중..."):
+if show_data:
+    # 매 요청 시 에러 수집 메커니즘 리셋
+    st.session_state['api_error_msg'] = ""
+    
+    with st.spinner("네이버 광고 서버로부터 원시 데이터를 정합 수집 중입니다..."):
+        # 1. 일별 상세 지표 로드
         if is_test_mode:
             raw_df = get_mock_daily_stats(selected_adg_id, start_date, end_date)
         else:
@@ -693,89 +730,90 @@ if show_daily_detail:
                 end_date
             )
             
-        if raw_df is not None and not raw_df.empty:
-            total_imp = raw_df["노출수"].sum()
-            total_clk = raw_df["클릭수"].sum()
-            total_cost = raw_df["총비용"].sum()
-            
-            total_ctr = round((total_clk / total_imp) * 100, 2) if total_imp > 0 else 0.0
-            total_cpc = int(total_cost / total_clk) if total_clk > 0 else 0
-            
-            # (1) 최상단 종합 요약 "합계표" 구성
-            summary_df = pd.DataFrame([{
-                "총 노출수": total_imp,
-                "총 클릭수": total_clk,
-                "평균 클릭률(%)": total_ctr,
-                "평균 CPC": total_cpc,
-                "총비용 합계": total_cost
-            }])
-            
-            # 💡 [피드백 반영] 좌측 끝단 배치를 위한 독립된 '날짜' 표 구성
-            date_df = raw_df[["날짜"]].copy()
-            
-            # 💡 [피드백 반영] 우측 세 단에는 날짜 정보를 완벽히 차단하고 오직 실무 수치 정보만 수집한 데이터프레임 구성
-            imp_clk_df = raw_df[["노출수", "클릭수"]].copy()
-            cpc_df = raw_df[["평균 CPC"]].copy()
-            cost_df = raw_df[["총비용"]].copy()
-            
-            # 최상단 요약 "합계표"는 전체 가로 너비를 넓게 채워 렌더링 및 텍스트 전용 복사 단축 버튼을 매핑합니다.
-            render_table_with_copy_btn(summary_df, "🏆 주간 총 합계표", is_summary_table=True)
-            
-            st.markdown("###") # 레이아웃 공백 보정
-            
-            # 💡 [피드백 반영] 개별 제목 호출 대신 가로 컬럼 시작 직전 상단에 한 번만 대제목 명시
-            st.markdown("#### 📊 일별 데이터")
-            
-            # 💡 [피드백 반영] 지정해주신 비율인 1:1.2:1.2:1.2 로 4단 그리드를 구축합니다.
-            col_date, col1, col2, col3 = st.columns([1, 1.2, 1.2, 1.2])
-            
-            # (1) 첫 번째 col_date 단 : 오직 '날짜' 정보만 가진 표 렌더링 (복사 단추 미노출)
-            with col_date:
-                date_html = convert_df_to_html_grid(date_df, is_summary_table=False)
-                wrapped_date_html = f"""
-                <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
-                    {date_html}
-                </div>
-                """
-                # 💡 [버그 조치 및 피드백 반영] 잘림 현상 방지를 위해 다른 컬럼들과 동일한 동적 높이를 계산하여 June 14일까지 선명히 출력합니다.
-                iframe_height = get_table_iframe_height(date_df, is_summary=False)
-                st.components.v1.html(wrapped_date_html, height=iframe_height, scrolling=False)
+        # 2. 키워드별 성과 지표 로드 (플레이스광고 아닐 시에만 후행 호출)
+        kw_df = None
+        if selected_ad_type != '플레이스광고':
+            if is_test_mode:
+                kw_df = get_mock_keyword_stats(selected_adg_id, selected_ad_type, start_date, end_date)
+            else:
+                kw_df = fetch_keyword_stats(
+                    input_customer_id, 
+                    input_api_key, 
+                    input_secret_key, 
+                    selected_adg_id, 
+                    start_date, 
+                    end_date, 
+                    selected_ad_type
+                )
                 
-            # (2) 우측 3개 단 : 날짜가 완전 배제된 순수 수치 표 매핑 (복사 버튼 유지, 제목 파라미터는 ""로 차단)
-            with col1:
-                render_table_with_copy_btn(imp_clk_df, "", is_summary_table=False)
-                
-            with col2:
-                render_table_with_copy_btn(cpc_df, "", is_summary_table=False)
-                
-            with col3:
-                render_table_with_copy_btn(cost_df, "", is_summary_table=False)
+    # 💡 [피드백 반영] 만약 수집 도중 에러 로그가 발견되면 화면에 실패 요인을 구체적으로 표시하고 정지합니다.
+    if st.session_state.get('api_error_msg'):
+        st.error(f"❌ 광고 데이터를 수집하는 과정에서 에러가 감지되었습니다. 원인을 점검해 주세요:\n\n{st.session_state['api_error_msg']}")
+        st.session_state['api_error_msg'] = ""  # 리셋
+        st.stop()
+        
+    # 일별 데이터 표출 시작
+    if raw_df is not None and not raw_df.empty:
+        total_imp = raw_df["노출수"].sum()
+        total_clk = raw_df["클릭수"].sum()
+        total_cost = raw_df["총비용"].sum()
+        
+        total_ctr = round((total_clk / total_imp) * 100, 2) if total_imp > 0 else 0.0
+        total_cpc = int(total_cost / total_clk) if total_clk > 0 else 0
+        
+        summary_df = pd.DataFrame([{
+            "총 노출수": total_imp,
+            "총 클릭수": total_clk,
+            "평균 클릭률(%)": total_ctr,
+            "평균 CPC": total_cpc,
+            "총비용 합계": total_cost
+        }])
+        
+        date_df = raw_df[["%s" % "날짜"]].copy()
+        imp_clk_df = raw_df[["노출수", "클릭수"]].copy()
+        cpc_df = raw_df[["평균 CPC"]].copy()
+        cost_df = raw_df[["총비용"]].copy()
+        
+        # 💡 [피드백 반영] 주간 총 합계표 부분은 우측 복사하기 버튼이 나타나지 않도록 처리합니다 (show_copy_btn=False)
+        render_table_with_copy_btn(summary_df, "🏆 주간 총 합계표", is_summary_table=True, show_copy_btn=False)
+        
+        st.markdown("###") # 여백 보정
+        
+        # 가로 격자 상단에 단 하나의 대제목만 정적 마킹합니다.
+        st.markdown("#### 📊 일별 데이터")
+        
+        # 1:1.2:1.2:1.2 비율 구성
+        col_date, col1, col2, col3 = st.columns([1, 1.2, 1.2, 1.2])
+        
+        # (1) 날짜 표 - 버튼 불필요하므로 convert_df_to_html_grid 후 components.html 로만 렌더링
+        with col_date:
+            date_html = convert_df_to_html_grid(date_df, is_summary_table=False)
+            wrapped_date_html = f"""
+            <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
+                {date_html}
+            </div>
+            """
+            iframe_height = get_table_iframe_height(date_df, is_summary=False)
+            st.components.v1.html(wrapped_date_html, height=iframe_height, scrolling=False)
             
-            st.success("✅ 조회가 완료되었습니다! 표 바로 밑단에 준비된 검정색 테두리의 복사하기 단축버튼을 누르시면, 날짜가 제외된 순수 지표 데이터만 엑셀에 주변 서식 맞춤으로 간편하게 붙여넣어집니다.")
-        else:
-            st.error("해당 광고그룹에 해당하는 일별 상세 통계 정보가 부존재합니다.")
-
-
-# ==========================================
-# [액션 2] 상위 키워드 지표 그리드(HTML) 출력 (파워링크, 파워컨텐츠 유형 전용)
-# ==========================================
-if show_keyword_rank:
-    with st.spinner("가장 성과가 뛰어난 상위 10개 키워드 지표를 추적하는 중..."):
-        if is_test_mode:
-            kw_df = get_mock_keyword_stats(selected_adg_id, selected_ad_type, start_date, end_date)
-        else:
-            kw_df = fetch_keyword_stats(
-                input_customer_id, 
-                input_api_key, 
-                input_secret_key, 
-                selected_adg_id, 
-                start_date, 
-                end_date, 
-                selected_ad_type
-            )
+        # (2) 노출수, 클릭수 표 - 빈 값("")을 주어 타이틀 없이 수치와 복사 단추만 콤팩트하게 출력
+        with col1:
+            render_table_with_copy_btn(imp_clk_df, "", is_summary_table=False)
             
-        if kw_df is not None and not kw_df.empty:
+        # (3) 평균 CPC 표
+        with col2:
+            render_table_with_copy_btn(cpc_df, "", is_summary_table=False)
+            
+        # (4) 총비용 표
+        with col3:
+            render_table_with_copy_btn(cost_df, "", is_summary_table=False)
+            
+        # 💡 [피드백 반영] 플레이스광고가 아닐 때 2단계 영역(키워드 성과 리포트)도 아래에 연쇄 출력합니다.
+        if selected_ad_type != '플레이스광고' and kw_df is not None and not kw_df.empty:
+            st.markdown("---")
             render_table_with_copy_btn(kw_df, "📊 키워드별 검색어 성과 (클릭수 상위 10개)", is_summary_table=False)
-            st.success("✅ 키워드 성과 보고서 출력이 완료되었습니다! 엑셀 양식에 맞춰 복사해서 사용해 보세요.")
-        else:
-            st.warning("⚠️ 해당 광고그룹 내에서 수집 가능한 키워드 실적 지표가 존재하지 않습니다.")
+            
+        # 💡 [피드백 반영] 긴 설명 캡션을 제거하고 한 줄의 완성 문구만 노출합니다.
+        st.success("조회가 완료되었습니다!")
+    else:
+        st.error("해당 광고그룹에 해당하는 일별 상세 통계 정보가 부존재합니다.")
