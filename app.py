@@ -8,9 +8,9 @@ import requests
 import pandas as pd
 
 # ==========================================
-# [다크모드 원천 방어 및 고대비 텍스트 테마 고정]
+# 💡 [피드백 적극 반영] 넓은 화면에서도 자연스럽게 정렬되는 와이드(wide) 레이아웃 설정
 # ==========================================
-st.set_page_config(page_title="광고 데이터 추출기", layout="centered")
+st.set_page_config(page_title="광고 데이터 추출기", layout="wide")
 
 st.markdown("""
     <style>
@@ -45,12 +45,14 @@ st.markdown("""
         background-color: #FFFFFF !important;
         color: #000000 !important;
     }
+    
+    /* 💡 [피드백 반영] 이지적이고 깔끔한 블루 계열로 드롭다운 호버 하이라이트 색상 변경 */
     li[role="option"]:hover, div[role="option"]:hover {
-        background-color: #FFF9C4 !important;
+        background-color: #EBF8FF !important;
         color: #000000 !important;
     }
     
-    /* 💡 [피드백 반영] 날짜 조회 인풋박스의 배경을 흰색으로, 글자색을 검정색으로 정밀하게 강제 주입합니다. */
+    /* 날짜 입력 기능(st.date_input) 박스 내부 배경을 흰색으로, 글씨를 검정색으로 확실하게 강제합니다. */
     div[data-testid="stDateInput"] div {
         background-color: #FFFFFF !important;
         color: #000000 !important;
@@ -60,20 +62,23 @@ st.markdown("""
         color: #000000 !important;
     }
     
-    /* 💡 [피드백 반영] 데이터 추출 버튼 텍스트의 굵기를 볼드 최상위(900) 등급으로 강화합니다. */
+    /* 💡 [피드백 반영] 포인트 컬러를 신뢰를 주는 연한 스카이 블루(#EBF8FF)와 인디고 블루 테두리로 교체하고 텍스트 굵기를 극대화합니다. */
     div.stButton > button {
-        background-color: #FFFDE7 !important;
-        color: #000000 !important;
-        border: 2px solid #C0B090 !important;
+        background-color: #EBF8FF !important; /* 신뢰감을 주는 스카이블루 배경 */
+        color: #2B6CB0 !important; /* 딥 블루 글씨 */
+        border: 2px solid #2B6CB0 !important; /* 선명한 고대비 블루 외곽선 */
         border-radius: 6px !important;
-        padding: 0.7rem 1.8rem !important;
-        font-weight: 900 !important; /* 굵기 볼드 극대화 */
+        padding: 0.8rem 2.0rem !important;
+        font-size: 15px !important; /* 글자 크기 보정 */
+        font-weight: 900 !important; /* 텍스트 굵기 대폭 상향 */
+        letter-spacing: 0.5px !important;
         transition: all 0.3s ease;
         width: 100%;
+        box-shadow: 0 2px 4px rgba(43, 108, 176, 0.1) !important;
     }
     div.stButton > button:hover {
-        background-color: #FFF9C4 !important;
-        border: 2px solid #888888 !important;
+        background-color: #BEE3F8 !important; /* 마우스 오버 시 조금 더 짙은 블루 */
+        border: 2px solid #2B6CB0 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -118,16 +123,16 @@ def get_header(method, uri, api_key, secret_key, customer_id):
 def convert_df_to_html_grid(df, is_summary_table=False):
     html = '<table style="width:100%; border-collapse:collapse; font-family:sans-serif; text-align:center; margin-top:10px; color:#000000 !important; border:1px solid #D0C0A0;">'
     
-    # 💡 [피드백 반영] 일별 데이터 표 타이틀 및 헤더 영역을 가독성이 좋았던 이전 색상(#FFFDE7)으로 완전 복귀했습니다.
-    header_color = "#FFF9C4" if is_summary_table else "#FFFDE7"
+    # 💡 [피드백 반영] 테이블 헤더의 배경색을 연노랑에서 기업형 소프트 그레이와 네이비 그레이로 전격 변경하여 신뢰감을 줍니다.
+    header_color = "#DCE6F1" if is_summary_table else "#F2F4F8"
     html += f'<thead><tr style="background-color:{header_color}; border-bottom:2px solid #CCCCCC; font-weight:bold; height:36px;">'
     for col in df.columns:
         html += f'<th style="padding:10px; border:1px solid #E0E0E0; color:#000000 !important; font-size:14px;">{col}</th>'
     html += '</tr></thead><tbody>'
     
     for i, row in df.iterrows():
-        # 💡 [피드백 반영] 합계표가 아닌 일반 일별 데이터 테이블은 본래 지니고 있던 기본 화이트 톤으로 복귀합니다.
-        row_style = "background-color:#FFFDE7;" if is_summary_table else ""
+        # 요약표의 경우 옅은 소프트 블루(#F2F6FB)를 주어 한층 격조 높은 데이터 카드를 형성합니다.
+        row_style = "background-color:#F2F6FB;" if is_summary_table else "background-color:#FFFFFF;"
         html += f'<tr style="{row_style} border-bottom:1px solid #E5E5E5; height:32px;">'
         
         for col in df.columns:
@@ -170,20 +175,21 @@ def dataframe_to_tsv_string(df):
     return "\n".join(lines)
 
 
-# [컴포넌트] 고대비 일괄 복사 컴포넌트 템플릿 제어 모듈
+# [컴포넌트] 신뢰형 인디고 블루 복사 버튼 템플릿 제어 모듈
 def render_table_and_button_html(df, title, is_summary_table=False):
     table_html = convert_df_to_html_grid(df, is_summary_table)
     tsv_text = dataframe_to_tsv_string(df)
     
     unique_id = str(int(time.time() * 1000)) + str(abs(hash(title)))
     
+    # 💡 [피드백 반영] 복사하기 버튼의 시인성과 명도 대비를 완전히 개선하여 보완했습니다. (진한 네이비 2px solid #2B6CB0 보더 장착)
     html_code = f"""
     <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
         {table_html}
         <button id="btn-{unique_id}" onclick="copyText()" style="
-            background-color: #FFFDE7 !important;
-            color: #000000 !important;
-            border: 2px solid #000000 !important;
+            background-color: #EBF8FF !important;
+            color: #2B6CB0 !important;
+            border: 2px solid #2B6CB0 !important;
             border-radius: 6px !important;
             padding: 10px 16px !important;
             font-size: 13px !important;
@@ -191,11 +197,11 @@ def render_table_and_button_html(df, title, is_summary_table=False):
             cursor: pointer !important;
             width: 100% !important;
             margin-top: 10px !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
             text-align: center !important;
             display: block !important;
             transition: all 0.2s;
-        " onmouseover="this.style.backgroundColor='#FFF9C4'" onmouseout="this.style.backgroundColor='#FFFDE7'">
+        " onmouseover="this.style.backgroundColor='#BEE3F8'" onmouseout="this.style.backgroundColor='#EBF8FF'">
             📋 복사하기
         </button>
         <textarea id="area-{unique_id}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
@@ -235,8 +241,8 @@ def render_table_and_button_html(df, title, is_summary_table=False):
         btn.style.color = '#000000';
         setTimeout(function() {{
             btn.innerHTML = '📋 복사하기';
-            btn.style.backgroundColor = '#FFFDE7';
-            btn.style.borderColor = '#000000';
+            btn.style.backgroundColor = '#EBF8FF';
+            btn.style.borderColor = '#2B6CB0';
         }}, 2000);
     }}
     </script>
@@ -254,7 +260,7 @@ def get_table_iframe_height(df, is_summary=False):
         return max(calc_height, 160)
 
 
-# 💡 [피드백 적극 반영] 합계표 복사 버튼 제거 및 잘림 현상 방지를 위해 최솟값 140px 보정 완료
+# [컴포넌트] 합계표 복사 버튼 제거 및 잘림 현상 방지를 위해 최솟값 140px 보정 완료
 def render_table_with_copy_btn(df, title, is_summary_table=False, show_copy_btn=True):
     if title:
         st.markdown(f"##### {title}")
@@ -264,7 +270,7 @@ def render_table_with_copy_btn(df, title, is_summary_table=False, show_copy_btn=
         iframe_height = get_table_iframe_height(df, is_summary_table)
         st.components.v1.html(html_content, height=iframe_height, scrolling=False)
     else:
-        # 💡 [버그 복구] 버튼이 제거된 합계표의 경우 가로 테두리/여백이 절대 잘리지 않도록 최소 높이를 140px로 넉넉하게 튜닝합니다.
+        # 💡 [피드백 적극 반영] 주간 총 합계표가 잘리는 오류를 해결하기 위해 최소 프레임 면적을 140px로 넉넉하게 보정합니다.
         table_html = convert_df_to_html_grid(df, is_summary_table)
         wrapped_html = f"""
         <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
@@ -614,7 +620,7 @@ input_secret_key = st.session_state.get('input_secret_key', '')
 # ==========================================
 # [메인 제어] 플레이스 통계 및 결과 표 도출
 # ==========================================
-# 앱의 대제목을 '광고 데이터 추출기'로 간결히 변경했습니다.
+# 대제목을 '광고 데이터 추출기'로 간결히 변경했습니다.
 st.subheader("광고 데이터 추출기")
 
 # 계정 선택 가이드 노출
@@ -625,7 +631,7 @@ if selected_profile == "광고 ID 선택" or not selected_profile:
 # 가상 모드 작동 여부 결정
 is_test_mode = ("mock" in str(input_customer_id).lower()) or (input_customer_id == "")
 
-# 조회 범위 입력 상자
+# 💡 [피드백 반영] 가로로 나열되는 선택 영역에 맞추기 위해, 날짜 조회 입력도 3분할 열과 유사하게 넓게 배치합니다.
 col_date1, col_date2 = st.columns(2)
 with col_date1:
     # 💡 [피드백 반영] 요일 정보를 기재 방식에서 완벽하게 소거했습니다.
@@ -637,13 +643,16 @@ with col_date2:
 # 💡 [피드백 반영] 대제목 이모지를 삭제하고 '광고 유형'으로 개편했습니다.
 st.markdown("### 광고 유형")
 
-# 광고유형의 선택 순서 (플레이스광고 ➡️ 파워링크광고 ➡️ 파워컨텐츠광고)
-# '광고그룹'으로 라벨 변경 및 세션 키 바인딩 수립
-selected_ad_type = st.selectbox(
-    "광고그룹", 
-    ['플레이스광고', '파워링크광고', '파워컨텐츠광고'],
-    key='selected_ad_type'
-)
+# 💡 [피드백 반영] 와이드 레이아웃 하에서 광고 유형 선택 영역이 좌측에 뭉치지 않도록 가로 3열 그리드로 넓게 펼칩니다.
+col_ad1, col_ad2, col_ad3 = st.columns(3)
+
+with col_ad1:
+    # 💡 [피드백 반영] '광고그룹'으로 라벨 변경
+    selected_ad_type = st.selectbox(
+        "광고그룹", 
+        ['플레이스광고', '파워링크광고', '파워컨텐츠광고'],
+        key='selected_ad_type'
+    )
 
 if is_test_mode:
     campaign_list = get_mock_campaigns(selected_ad_type)
@@ -663,9 +672,10 @@ if not campaign_list:
         st.warning("선택하신 유형에 부합하는 캠페인이 확인되지 않습니다.")
     st.stop()
 
-# '캠페인'으로 라벨 변경
-camp_options = {c['nccCampaignId']: c['name'] for c in campaign_list}
-selected_camp_id = st.selectbox("캠페", options=list(camp_options.keys()), format_func=lambda x: camp_options[x])
+# 💡 [피드백 반영] 가로 두 번째 열에 '캠페인' 셀렉트박스를 할당합니다.
+with col_ad2:
+    camp_options = {c['nccCampaignId']: c['name'] for c in campaign_list}
+    selected_camp_id = st.selectbox("캠페인", options=list(camp_options.keys()), format_func=lambda x: camp_options[x])
 
 if is_test_mode:
     adgroup_list = get_mock_adgroups(selected_camp_id)
@@ -685,9 +695,10 @@ if not adgroup_list:
         st.warning("지정된 캠페인 하위에 개설된 광고그룹이 존재하지 않습니다.")
     st.stop()
 
-# '상세 광고그룹'으로 라벨 변경
-adg_options = {g['nccAdgroupId']: g['name'] for g in adgroup_list}
-selected_adg_id = st.selectbox("상세 광고그룹", options=list(adg_options.keys()), format_func=lambda x: adg_options[x])
+# 💡 [피드백 반영] 가로 세 번째 열에 '상세 광고그룹' 셀렉트박스를 할당합니다.
+with col_ad3:
+    adg_options = {g['nccAdgroupId']: g['name'] for g in adgroup_list}
+    selected_adg_id = st.selectbox("상세 광고그룹", options=list(adg_options.keys()), format_func=lambda x: adg_options[x])
 
 
 # '평균 광고 노출 입찰가' 가이드 연동
@@ -709,8 +720,8 @@ if selected_ad_type == '플레이스광고':
 
 st.markdown("---")
 
-# 💡 [피드백 반영] 데이터 추출 버튼을 가로로 확장하고 중앙에 정렬하기 위해 분할 컴포넌트를 사용합니다.
-col_btn_left, col_btn_center, col_btn_right = st.columns([1, 2, 1])
+# 💡 [피드백 반영] 대형 레이아웃 하에서 추출 단추가 쏠리지 않도록 선택 사양 하단 중앙에 넓게 래핑합니다.
+col_btn_left, col_btn_center, col_btn_right = st.columns([1.5, 1, 1.5])
 with col_btn_center:
     show_data = st.button("데이터 추출")
 
@@ -819,7 +830,6 @@ if show_data:
             st.markdown("---")
             render_table_with_copy_btn(kw_df, "📊 키워드별 검색어 성과 (클릭수 상위 10개)", is_summary_table=False)
             
-        # 💡 [피드백 반영] 설명란 및 부가 안내가 생략된 단정형 성공 피드백을 노출합니다.
-        st.success("조회가 완료되었습니다!")
+            st.success("조회가 완료되었습니다!")
     else:
         st.error("해당 광고그룹에 해당하는 일별 상세 통계 정보가 부존재합니다.")
