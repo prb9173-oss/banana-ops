@@ -62,7 +62,7 @@ st.markdown("""
     
     /* 💡 [피드백 적극 반영] 데이터 추출 버튼 외곽선 완전 제거, 블루 계열 내부 채우기, 텍스트 흰색 볼드 고정 */
     div.stButton > button {
-        background-color: #2B6CB0 !important; /* 신뢰감 있는 스카이블루 채우기 */
+        background-color: #2B6CB0 !important; /* 신뢰감 있는 블루 채우기 */
         color: #FFFFFF !important; /* 글자색 완전 흰색 */
         border: none !important; /* 외곽 테두리 선 완전 제거 */
         border-radius: 6px !important;
@@ -201,7 +201,7 @@ def render_table_and_button_html(df, title, is_summary_table=False):
     
     unique_id = str(int(time.time() * 1000)) + str(abs(hash(title)))
     
-    # 💡 복사단추 역시 버튼 외곽 테두리를 없애고 블루계열 채우기와 고대비 텍스트로 보완했습니다.
+    # 복사단추 역시 버튼 외곽 테두리를 없애고 블루계열 채우기와 고대비 텍스트로 보완했습니다.
     html_code = f"""
     <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
         {table_html}
@@ -280,7 +280,7 @@ def get_table_iframe_height(df, is_summary=False):
         return max(calc_height, 160)
 
 
-# 💡 [피드백 적극 반영] 요약합계표 하단 잘림 문제를 완전히 해결하기 위해 오프셋을 상향(최소 140px) 튜닝했습니다.
+# 💡 요약합계표 하단 잘림 문제를 완전히 해결하기 위해 오프셋을 상향(최소 140px) 튜닝했습니다.
 def render_table_with_copy_btn(df, title, is_summary_table=False, show_copy_btn=True):
     if title:
         st.markdown(f"##### {title}")
@@ -464,8 +464,6 @@ def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, 
     stats_json = response.json()
     data_rows = []
     if 'data' in stats_json:
-        # 네이버 서버가 전달하는 날짜 필드의 결측 에러를 방지하기 위해 
-        # python의 enumerate를 통해 i 인덱스를 확보하고 시작일자로부터 1일씩 순회하며 독자적으로 날짜를 생성 및 바인딩합니다.
         for i, stat in enumerate(stats_json['data']):
             dt = (start_date + datetime.timedelta(days=i)).strftime("%Y-%m-%d")
             
@@ -590,11 +588,21 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
 
 
 # ==========================================
-# [사이드바 설계 및 Secrets 연동] 로컬 연동 및 영구저장 데이터 완전 소거
+# 💡 [사이드바 설계 및 Secrets 연동] 로컬 연동 및 영구저장 데이터 완전 소거
 # ==========================================
 st.sidebar.markdown("### 📁 광고 계정 선택")
 
-available_accounts = list(st.session_state['ad_accounts'].keys())
+# 💡 [피드백 반영] st.session_state 대신 st.secrets 에 정의된 유효 계정 세션을 실시간으로 안전하게 불러오도록 수정했습니다.
+available_accounts = []
+try:
+    for k in st.secrets.keys():
+        section = st.secrets[k]
+        if hasattr(section, "get") or isinstance(section, dict):
+            if "customer_id" in section and "api_key" in section and "secret_key" in section:
+                available_accounts.append(k)
+except Exception:
+    pass
+
 options_list = ["광고 ID 선택"] + available_accounts
 
 # 콜백 핸들러 정의
@@ -644,17 +652,19 @@ if selected_profile == "광고 ID 선택" or not selected_profile:
 # 가상 모드 작동 여부 결정
 is_test_mode = ("mock" in str(input_customer_id).lower()) or (input_customer_id == "")
 
-# 💡 [피드백 반영] 요일명을 제외하고 '조회 시작일'과 '조회 종료일'로 세팅 완료
+# 조회 범위 입력 상자
 col_date1, col_date2 = st.columns(2)
 with col_date1:
+    # 요일 정보를 기재 방식에서 완전히 소거했습니다.
     start_date = st.date_input("조회 시작일", value=last_monday)
 with col_date2:
+    # 요일 정보를 기재 방식에서 완전히 소거했습니다.
     end_date = st.date_input("조회 종료일", value=last_sunday)
 
-# 💡 [피드백 반영] 대제목 이모지를 삭제하고 '광고 유형'으로 개편했습니다.
+# 대제목 이모지를 삭제하고 '광고 유형'으로 개편했습니다.
 st.markdown("### 광고 유형")
 
-# 💡 [피드백 반영] 광고유형의 선택 순서를 세로형(수직) 배열로 원위치 복원했습니다.
+# 원래 요구하셨던 세로형(수직형) 레이아웃으로 완벽히 복원했습니다.
 selected_ad_type = st.selectbox(
     "광고그룹", 
     ['플레이스광고', '파워링크광고', '파워컨텐츠광고'],
@@ -679,8 +689,9 @@ if not campaign_list:
         st.warning("선택하신 유형에 부합하는 캠페인이 확인되지 않습니다.")
     st.stop()
 
-# '캠페인' 라벨 명시
-selected_camp_id = st.selectbox("캠페인", options=list({c['nccCampaignId']: c['name'] for c in campaign_list}.keys()), format_func=lambda x: {c['nccCampaignId']: c['name'] for c in campaign_list}[x])
+# '캠페인' 라벨 명시 및 복원
+camp_options = {c['nccCampaignId']: c['name'] for c in campaign_list}
+selected_camp_id = st.selectbox("캠페인", options=list(camp_options.keys()), format_func=lambda x: camp_options[x])
 
 if is_test_mode:
     adgroup_list = get_mock_adgroups(selected_camp_id)
@@ -700,7 +711,7 @@ if not adgroup_list:
         st.warning("지정된 캠페인 하위에 개설된 광고그룹이 존재하지 않습니다.")
     st.stop()
 
-# '상세 광고그룹' 라벨 명시
+# '상세 광고그룹' 라벨 명시 및 복원
 adg_options = {g['nccAdgroupId']: g['name'] for g in adgroup_list}
 selected_adg_id = st.selectbox("상세 광고그룹", options=list(adg_options.keys()), format_func=lambda x: adg_options[x])
 
@@ -724,7 +735,7 @@ if selected_ad_type == '플레이스광고':
 
 st.markdown("---")
 
-# 💡 [피드백 반영] 수직 구성 하단 기준 가로 정렬의 중앙에 단추를 크게 배치합니다.
+# 💡 [피드백 적극 반영] 수직 광고그룹 설정부 하단 정중앙에 '데이터 추출' 단추를 크게 배치합니다.
 col_btn_left, col_btn_center, col_btn_right = st.columns([1.5, 1, 1.5])
 with col_btn_center:
     show_data = st.button("데이터 추출")
@@ -798,7 +809,7 @@ if show_data:
         # 💡 [피드백 반영] 주간 총 합계표 부분은 우측 복사하기 버튼이 나타나지 않도록 처리합니다 (show_copy_btn=False)
         render_table_with_copy_btn(summary_df, "🏆 주간 총 합계표", is_summary_table=True, show_copy_btn=False)
         
-        st.markdown("###") # 레이아웃 공백 보정
+        st.markdown("###") # 레이아웃 여백 보정
         
         # 가로 격자 상단에 단 하나의 대제목만 정적 마킹합니다.
         st.markdown("#### 📊 일별 데이터")
@@ -834,7 +845,7 @@ if show_data:
             st.markdown("---")
             render_table_with_copy_btn(kw_df, "📊 키워드별 검색어 성과 (클릭수 상위 10개)", is_summary_table=False)
             
-        # 💡 [피드백 반영] 설명란 및 부가 안내가 생략된 단정형 성공 피드백을 노출합니다.
+        # [성공 가이드 메시지 한 줄 노출]
         st.success("조회가 완료되었습니다!")
     else:
         st.error("해당 광고그룹에 해당하는 일별 상세 통계 정보가 부존재합니다.")
