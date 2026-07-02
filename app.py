@@ -8,7 +8,7 @@ import requests
 import pandas as pd
 
 # ==========================================
-# 💡 [다크모드 원천 방어 및 사이드바 고정형 wide 테마 고정]
+# [다크모드 원천 방어 및 고대비 텍스트 테마 고정]
 # ==========================================
 # initial_sidebar_state를 expanded로 지정하여 항상 펼쳐진 채로 기동합니다.
 st.set_page_config(page_title="광고 데이터 추출기", layout="wide", initial_sidebar_state="expanded")
@@ -42,15 +42,50 @@ st.markdown("""
     div[data-baseweb="popover"] {
         background-color: #FFFFFF !important;
     }
-    div[role="listbox"] div, li[role="option"] {
+    
+    /* 💡 [피드백 적극 반영] 사이드바 무선 라디오를 고급스러운 클릭형 메뉴 카드로 탈바꿈시킵니다. */
+    div[data-testid="stSidebar"] div[role="radiogroup"] label[data-baseweb="radio"] {
         background-color: #FFFFFF !important;
-        color: #000000 !important;
+        border: 1px solid #E2E8F0 !important;
+        border-radius: 6px !important;
+        padding: 12px 16px !important;
+        margin-bottom: 8px !important;
+        width: 100% !important;
+        display: flex !important;
+        transition: all 0.2s ease-in-out !important;
+        cursor: pointer !important;
     }
     
-    /* 이성적인 연스카이 그레이 블루 톤으로 드롭다운 호버 하이라이트 지정 */
-    li[role="option"]:hover, div[role="option"]:hover {
-        background-color: #EBF4FA !important;
+    /* 기존 라디오 동그라미 단추 숨김 처리 */
+    div[data-testid="stSidebar"] div[role="radiogroup"] label[data-baseweb="radio"] div[data-baseweb="radio__input"] {
+        display: none !important;
+    }
+    
+    /* 💡 [피드백 적극 반영] 사이드바 선택 목록 텍스트 크기를 15px 볼드로 키우고 기조를 맞춥니다. */
+    div[data-testid="stSidebar"] div[role="radiogroup"] label[data-baseweb="radio"] div[data-testid="stWidgetLabel"] p {
+        font-size: 15px !important;
+        font-weight: 700 !important;
         color: #000000 !important;
+        margin: 0 !important;
+    }
+    
+    /* 💡 [피드백 적극 반영] 선택 시 클릭된 영역처럼 은은한 인디고 블루(#EBF8FF) 배경과 #2B6CB0 보더라인 매핑 */
+    div[data-testid="stSidebar"] div[role="radiogroup"] label[data-baseweb="radio"][aria-checked="true"] {
+        background-color: #EBF8FF !important; 
+        border: 2px solid #2B6CB0 !important;
+    }
+    div[data-testid="stSidebar"] div[role="radiogroup"] label[data-baseweb="radio"][aria-checked="true"] div[data-testid="stWidgetLabel"] p {
+        color: #2B6CB0 !important; /* 선택 항목 텍스트 딥블루 고정 */
+    }
+    
+    /* 호버(Hover) 시 피드백 이펙트 */
+    div[data-testid="stSidebar"] div[role="radiogroup"] label[data-baseweb="radio"]:hover {
+        background-color: #F7FAFC !important;
+        border-color: #CBD5E0 !important;
+    }
+    div[data-testid="stSidebar"] div[role="radiogroup"] label[data-baseweb="radio"][aria-checked="true"]:hover {
+        background-color: #EBF8FF !important;
+        border-color: #2B6CB0 !important;
     }
     
     /* 날짜 선택 인풋 박스 배경 흰색, 글자색 검정 고정 */
@@ -63,24 +98,19 @@ st.markdown("""
         color: #000000 !important;
     }
     
-    /* 데이터 추출 버튼 테두리 제거, 딥 네이비(#0A2540) 채우기, 완전 흰색(#FFFFFF) 아주 두꺼운 볼드 텍스트 */
+    /* 데이터 추출 버튼 테두리 제거, 스카이블루 배경, 흰색 고대비 볼드 텍스트 */
     div.stButton > button {
-        background-color: #0A2540 !important; 
+        background-color: #2B6CB0 !important; 
         border: none !important; 
         border-radius: 6px !important;
         padding: 0.8rem 2.0rem !important;
         font-size: 15px !important;
-        font-weight: 900 !important; 
-        letter-spacing: 0.5px !important;
         transition: all 0.3s ease;
-        width: auto !important; /* 가로 크기 자동 맞춤 */
-        white-space: nowrap !important; /* 위아래 여러 줄 줄바꿈 절대 방지 */
-        display: block !important;
-        margin: 0 auto !important; /* 정중앙 정렬 */
-        box-shadow: 0 4px 6px rgba(10, 37, 64, 0.15) !important;
+        width: 100%;
+        box-shadow: 0 4px 6px rgba(43, 108, 176, 0.2) !important;
     }
     div.stButton > button:hover {
-        background-color: #1A365D !important; 
+        background-color: #3182CE !important; 
         border: none !important;
     }
     
@@ -141,10 +171,10 @@ def get_header(method, uri, api_key, secret_key, customer_id):
 # [그리드 엔진] 브라우저 및 엑셀 드래그 복사용 표준 테이블 렌더러
 # ==========================================
 def convert_df_to_html_grid(df, is_summary_table=False):
-    # 반응형 스케일링 중 텍스트가 2줄로 줄 바꿈 되어 표가 깨지지 않도록 white-space: nowrap을 강제 주입합니다.
+    # 반응형 스케일링 중 텍스트가 2줄로 줄 바꿈 되어 표가 깨지지 않도록 white-space: nowrap을 원천 강제 주입합니다.
     html = '<table style="width:100%; border-collapse:collapse; font-family:sans-serif; text-align:center; margin-top:10px; color:#000000 !important; border:1px solid #CBD5E0; white-space:nowrap !important;">'
     
-    # 촌스러운 연노랑 색감을 전면 지우고, 합계표는 블루그레이(#D9E2EC), 일별 데이터는 실버그레이(#EDF2F7)로 일관성 있게 세팅했습니다.
+    # 일반 표 성과 가독성이 훌륭했던 파스텔 블루-그레이 톤으로 세팅합니다.
     header_color = "#D9E2EC" if is_summary_table else "#EDF2F7"
     html += f'<thead><tr style="background-color:{header_color}; border-bottom:2px solid #CCCCCC; font-weight:bold; height:36px; white-space:nowrap !important;">'
     for col in df.columns:
@@ -152,8 +182,9 @@ def convert_df_to_html_grid(df, is_summary_table=False):
     html += '</tr></thead><tbody>'
     
     for i, row in df.iterrows():
+        # 데이터 행의 배경색도 블루-그레이 테마에 맞추어 스카이블루 그레이(#F0F4F8) 및 완전화이트로 정립합니다.
         row_style = "background-color:#F0F4F8;" if is_summary_table else "background-color:#FFFFFF;"
-        html += f'<tr style="{row_style} border-bottom:1px solid #E2E8F0; height:32px; white-space:nowrap !important;">'
+        html += f'<tr style="{row_style} border-bottom:1px solid #E5E5E5; height:32px; white-space:nowrap !important;">'
         
         for col in df.columns:
             val = row[col]
@@ -195,19 +226,20 @@ def dataframe_to_tsv_string(df):
     return "\n".join(lines)
 
 
-# [컴포넌트] 신뢰형 딥 네이비 복사 버튼 템플릿 제어 모듈
+# [컴포넌트] 신뢰형 인디고 블루 복사 버튼 템플릿 제어 모듈
 def render_table_and_button_html(df, title, is_summary_table=False):
     table_html = convert_df_to_html_grid(df, is_summary_table)
     tsv_text = dataframe_to_tsv_string(df)
     
     unique_id = str(int(time.time() * 1000)) + str(abs(hash(title)))
     
+    # 복사단추 역시 버튼 외곽 테두리를 없애고 블루계열 채우기와 고대비 텍스트로 보완했습니다.
     html_code = f"""
     <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
         {table_html}
         <button id="btn-{unique_id}" onclick="copyText()" style="
-            background-color: #0A2540 !important;
-            color: #FFFFFF !important;
+            background-color: #EBF8FF !important;
+            color: #2B6CB0 !important;
             border: none !important;
             border-radius: 6px !important;
             padding: 10px 16px !important;
@@ -216,11 +248,11 @@ def render_table_and_button_html(df, title, is_summary_table=False):
             cursor: pointer !important;
             width: 100% !important;
             margin-top: 10px !important;
-            box-shadow: 0 4px 6px rgba(10,37,64,0.1) !important;
+            box-shadow: 0 4px 6px rgba(43, 108, 176, 0.1) !important;
             text-align: center !important;
             display: block !important;
             transition: all 0.2s;
-        " onmouseover="this.style.backgroundColor='#1A365D'" onmouseout="this.style.backgroundColor='#0A2540'">
+        " onmouseover="this.style.backgroundColor='#BEE3F8'" onmouseout="this.style.backgroundColor='#EBF8FF'">
             📋 복사하기
         </button>
         <textarea id="area-{unique_id}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
@@ -260,9 +292,8 @@ def render_table_and_button_html(df, title, is_summary_table=False):
         btn.style.color = '#000000';
         setTimeout(function() {{
             btn.innerHTML = '📋 복사하기';
-            btn.style.backgroundColor = '#0A2540';
-            btn.style.borderColor = 'none';
-            btn.style.color = '#FFFFFF';
+            btn.style.backgroundColor = '#EBF8FF';
+            btn.style.borderColor = '#2B6CB0';
         }}, 2000);
     }}
     </script>
@@ -584,22 +615,21 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
                         })
                         
         if data_rows:
-            df = pd.DataFrame(df)
+            df = pd.DataFrame(data_rows)
             df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
             return df
         return None
 
 
 # ==========================================
-# 💡 [사이드바 설계 및 Secrets 연동] 
+# [사이드바 설계 및 Secrets 연동] 
 # ==========================================
-st.sidebar.markdown("### 📁 서비스 메뉴")
-
-# 💡 [피드백 적극 반영 - 사이드바에 기능별 멀티 앱 구분 내비게이션 구성]
+# 💡 [피드백 반영] 불필요한 라벨 텍스트를 제거하고 세련된 상시 노출식 메뉴로 튜닝했습니다.
 selected_menu = st.sidebar.radio(
-    "이동할 서비스를 선택해 주세요.",
-    ["광고 데이터 추출기", "키워드 관리", "추가 확장"],
-    key="navigation_menu"
+    label="이동할 서비스를 선택해 주세요.",
+    options=["광고 데이터 추출기", "키워드 관리", "추가 확장"],
+    key="navigation_menu",
+    label_visibility="collapsed" # 라벨을 완벽히 숨겨 텍스트를 삭제 처리합니다.
 )
 
 
@@ -607,6 +637,9 @@ selected_menu = st.sidebar.radio(
 # [앱 분기 1] 광고 데이터 추출기 프로그램 가동
 # ==========================================
 if selected_menu == "광고 데이터 추출기":
+
+    # 💡 [피드백 반영] 앱별 최상단 메인 영역에 명시적 타이틀을 각 단독 마킹합니다.
+    st.subheader("광고 데이터 추출기")
 
     # secrets 파싱
     available_accounts = []
@@ -621,14 +654,14 @@ if selected_menu == "광고 데이터 추출기":
 
     options_list = ["광고 ID 선택"] + available_accounts
 
-    # 💡 [피드백 적극 반영] 계정 선택 선택지를 사이드바에서 메인 상단으로 옮겼습니다.
+    # 메인 페이지 내부 상단에 계정 선택 위젯 유지
     selected_profile = st.selectbox(
         "조회할 광고 계정을 선택해 주세요.", 
         options=options_list,
         key='selected_profile'
     )
 
-    # 💡 선택 계정 변경 감지 시 광고유형을 플레이스로 강제 회귀시키는 트리거 장치
+    # 선택 계정 변경 감지 시 광고유형을 플레이스로 강제 회귀시키는 트리거 장치
     if "last_selected_profile" not in st.session_state:
         st.session_state["last_selected_profile"] = selected_profile
 
@@ -725,14 +758,14 @@ if selected_menu == "광고 데이터 추출기":
             )
         else:
             avg_bid_val = 1460
-            
+        
         if avg_bid_val is not None:
             st.info(f"💡 **같은 지역 동종 업종 광고들의 평균 광고 노출 입찰가 참고하기 도움말**\n\n"
                     f"**평균 광고 노출 입찰가 : {avg_bid_val:,}**")
 
     st.markdown("---")
 
-    # 추출 단축 중앙 배열 적용
+    # 추출 단축 중앙 배열 및 볼드화 가속
     col_btn_left, col_btn_center, col_btn_right = st.columns([1.5, 1, 1.5])
     with col_btn_center:
         show_data = st.button("데이터 추출")
@@ -758,7 +791,7 @@ if selected_menu == "광고 데이터 추출기":
                     start_date, 
                     end_date
                 )
-                
+            
             # 2. 키워드별 성과 지표 로드 (플레이스광고 아닐 시에만 후행 호출)
             kw_df = None
             if selected_ad_type != '플레이스광고':
@@ -823,7 +856,7 @@ if selected_menu == "광고 데이터 추출기":
                 """
                 iframe_height = get_table_iframe_height(date_df, is_summary=False)
                 st.components.v1.html(wrapped_date_html, height=iframe_height, scrolling=False)
-                
+            
             # (2) 노출수, 클릭수 표 - 빈 값("")을 주어 타이틀 없이 수치와 복사 단추만 콤팩트하게 출력
             with col1:
                 render_table_with_copy_btn(imp_clk_df, "", is_summary_table=False)
@@ -850,7 +883,8 @@ if selected_menu == "광고 데이터 추출기":
 # [앱 분기 2] 키워드 관리 모듈 플레이스홀더
 # ==========================================
 elif selected_menu == "키워드 관리":
-    st.subheader("🔑 키워드 관리")
+    # 💡 [피드백 반영] 앱별 최상단 단독 타이틀 마킹합니다.
+    st.subheader("키워드 관리")
     st.info("💡 키워드 관리 서비스 준비 중입니다. 핵심 추천 키워드 및 제외 키워드 분석 도구가 탑재될 예정입니다.")
 
 
@@ -858,5 +892,6 @@ elif selected_menu == "키워드 관리":
 # [앱 분기 3] 추가 확장 모듈 플레이스홀더
 # ==========================================
 else:
-    st.subheader("🧩 추가 확장 서비스")
+    # 💡 [피드백 반영] 앱별 최상단 단독 타이틀 마킹합니다.
+    st.subheader("추가 확장")
     st.info("💡 추가 위클리 자동화 리포트 및 지표 통합 확장판이 설계될 예정입니다.")
