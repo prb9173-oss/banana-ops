@@ -1,0 +1,12 @@
+[theme]
+base = "light"
+primaryColor = "#1E3A5F"
+backgroundColor = "#F5F6F8"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#16181D"
+borderColor = "#E3E6EB"
+font = "sans serif"
+
+[client]
+# 개발용 메뉴(코드 보기, 캐시 지우기 등)만 숨기고, 라이트/다크 전환 등 기본 옵션은 유지합니다.
+toolbarMode = "viewer"
