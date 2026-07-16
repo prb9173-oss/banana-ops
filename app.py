@@ -8,101 +8,55 @@ import requests
 import pandas as pd
 
 # ==========================================
-# 💡 [다크모드 방어 + 모던 테마 고정]
-# 컬러 토큰을 한 번만 정의하고 이후 규칙은 모두 그 값을 참조합니다.
-# (겹치는 선택자를 줄이기 위해 동일 목적의 규칙은 셀렉터를 콤마로 묶어 하나로 통합했습니다.)
+# 💡 [테마 고정 방식 전환]
+# 라이트/다크 모드에 따라 컴포넌트별로 색이 흔들리던 문제의 원인은, 테마를
+# CSS로 "땜질"해서 강제하고 있었기 때문입니다 (일부 요소는 덮어써지고,
+# 셀렉트박스 등 내부 컴포넌트는 놓쳐서 다크 배경이 그대로 노출됨).
+#
+# 이제 앱의 기준 테마 자체를 .streamlit/config.toml 에서 라이트로 고정합니다.
+# 이렇게 하면 사용자의 OS/브라우저가 다크모드여도 모든 기본 컴포넌트(셀렉트박스,
+# 날짜입력, 사이드바 등)가 항상 같은 라이트 테마로 렌더링되어, 요소마다 서로
+# 다른 톤이 섞이는 일이 없어집니다. 아래 CSS는 config.toml이 다루지 않는
+# "브랜드 디테일"(폰트, 버튼 스타일, 여백)만 최소한으로 얹습니다.
 # ==========================================
 st.set_page_config(page_title="광고 데이터 추출기", layout="wide", page_icon="📊")
 
-PRIMARY = "#1E3A5F"       # 딥 네이비 (버튼, 강조)
+PRIMARY = "#1E3A5F"        # 딥 네이비 (버튼, 강조) — config.toml의 primaryColor와 동일하게 유지
 PRIMARY_HOVER = "#16304C"
-BG = "#F5F6F8"             # 앱 배경 (연한 쿨그레이)
+BG = "#F5F6F8"              # 앱 배경 — config.toml의 backgroundColor와 동일하게 유지
 SURFACE = "#FFFFFF"
 BORDER = "#E3E6EB"
-TEXT = "#16181D"
-ACCENT_SOFT = "#EEF3FA"    # 표 헤더, 드롭다운 호버 등 은은한 강조
 
 st.markdown(f"""
     <style>
     html, body, [class*="css"] {{
-        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif !important;
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif;
     }}
+    h1, h2, h3 {{ letter-spacing: -0.02em; font-weight: 700; }}
 
-    /* 다크모드로 반전되지 않도록 배경/사이드바 고정 */
-    .stApp {{ background-color: {BG} !important; }}
-    section[data-testid="stSidebar"] {{
-        background-color: {SURFACE} !important;
-        border-right: 1px solid {BORDER} !important;
-    }}
-
-    /* 텍스트 색상 고정 (다크모드 반전 방지) */
-    p, span, label, h1, h2, h3, h4, h5, h6, li, strong, th, td,
-    .stMarkdown, [data-testid="stWidgetLabel"] p, .stCaptionContainer p {{
-        color: {TEXT} !important;
-    }}
-    h1, h2, h3 {{ letter-spacing: -0.02em; font-weight: 700 !important; }}
-    .stTextInput label p, .stSelectbox label p, .stDateInput label p,
-    [data-testid="stSidebar"] label p {{
-        color: {TEXT} !important;
-        font-weight: 600 !important;
-        font-size: 13px !important;
-    }}
-
-    /* 입력 요소 (셀렉트박스, 날짜, 드롭다운) */
-    div[data-baseweb="select"] > div,
-    div[data-testid="stDateInput"] div,
-    div[data-testid="stDateInput"] input {{
-        background-color: {SURFACE} !important;
-        color: {TEXT} !important;
-        border: 1px solid {BORDER} !important;
-        border-radius: 8px !important;
-    }}
-    div[data-baseweb="popover"],
-    div[role="listbox"] div, li[role="option"] {{
-        background-color: {SURFACE} !important;
-        color: {TEXT} !important;
-    }}
-    li[role="option"]:hover, div[role="option"]:hover {{
-        background-color: {ACCENT_SOFT} !important;
-        color: {TEXT} !important;
-    }}
-
-    /* 기본 버튼 */
     div.stButton > button {{
-        background-color: {PRIMARY} !important;
-        border: none !important;
-        border-radius: 8px !important;
-        padding: 0.75rem 2.5rem !important;
-        font-size: 15px !important;
-        letter-spacing: 0.2px !important;
-        white-space: nowrap !important;
-        display: block !important;
-        margin: 0 auto !important;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08) !important;
+        background-color: {PRIMARY};
+        border: none;
+        border-radius: 8px;
+        padding: 0.75rem 2.5rem;
+        font-size: 15px;
+        letter-spacing: 0.2px;
+        white-space: nowrap;
+        display: block;
+        margin: 0 auto;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
         transition: background-color 0.15s ease, box-shadow 0.15s ease;
     }}
     div.stButton > button:hover {{
-        background-color: {PRIMARY_HOVER} !important;
-        box-shadow: 0 4px 10px rgba(16, 24, 40, 0.12) !important;
+        background-color: {PRIMARY_HOVER};
+        box-shadow: 0 4px 10px rgba(16, 24, 40, 0.12);
     }}
     div.stButton > button p {{
-        color: #FFFFFF !important;
-        font-weight: 700 !important;
+        color: #FFFFFF;
+        font-weight: 700;
     }}
 
-    /* 사이드바 접기/펴기 아이콘 */
-    button[data-testid="stSidebarCollapse"], button[data-testid="collapse-sidebar"] {{
-        background-color: {SURFACE} !important;
-        border: 1px solid {BORDER} !important;
-        color: {TEXT} !important;
-    }}
-    button[data-testid="stSidebarCollapse"] svg, button[data-testid="collapse-sidebar"] svg {{
-        fill: {TEXT} !important;
-        color: {TEXT} !important;
-    }}
-
-    /* info/warning/error 박스 라운딩 통일 */
-    div[data-testid="stAlert"] {{ border-radius: 10px !important; }}
+    div[data-testid="stAlert"] {{ border-radius: 10px; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -275,39 +229,32 @@ def render_table_and_button_html(df, title, is_summary_table=False):
     return html_code
 
 
-# 표 규격에 따른 실시간 높이 보정 수식 (복사버튼 유무에 맞춰 최적화 및 최대 높이 600px 제한)
-def get_table_iframe_height(df, is_summary=False):
-    row_count = len(df)
-    if is_summary:
-        return 220  
-    else:
-        # 각 행 35px + 보조 마진 140px
-        calc_height = 40 + (35 * row_count) + 140
-        return min(max(calc_height, 160), 600)
+# 표 실측 높이 기반 iframe 높이 계산 (여유 버퍼를 과하게 잡으면 표 아래에
+# 빈 흰 여백이 그대로 남아 배경과 어긋나 보이므로, 실제 렌더링 요소 기준으로 맞춥니다)
+def get_table_iframe_height(row_count, has_copy_btn):
+    header_and_rows = 38 + (32 * row_count)
+    extra = 90 if has_copy_btn else 20   # 복사 버튼 유무에 따른 실측 여백
+    return min(max(header_and_rows + extra, 120), 600)
 
 
-# 요약합계표 복사 버튼 제거 및 잘림 현상 방지를 위해 최솟값 140px 보정 완료
+# 요약합계표는 복사 버튼 없이 표만 렌더링합니다.
 def render_table_with_copy_btn(df, title, is_summary_table=False, show_copy_btn=True):
     if title:
         st.markdown(f"##### {title}")
-        
+
+    iframe_height = get_table_iframe_height(len(df), has_copy_btn=show_copy_btn)
+    allow_scrolling = iframe_height >= 600
+
     if show_copy_btn:
         html_content = render_table_and_button_html(df, title, is_summary_table)
-        iframe_height = get_table_iframe_height(df, is_summary_table)
-        allow_scrolling = iframe_height >= 600
-        st.components.v1.html(html_content, height=iframe_height, scrolling=allow_scrolling)
     else:
-        # 가로 테두리/여백 영역이 한계에 부딪혀 잘리지 않도록 세로 면적을 최소 140px로 여유롭게 할당했습니다.
         table_html = convert_df_to_html_grid(df, is_summary_table)
-        wrapped_html = f"""
+        html_content = f"""
         <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
             {table_html}
         </div>
         """
-        calc_height = 36 + (32 * len(df)) + 40
-        iframe_height = min(max(calc_height, 140), 600)
-        allow_scrolling = iframe_height >= 600
-        st.components.v1.html(wrapped_html, height=iframe_height, scrolling=allow_scrolling)
+    st.components.v1.html(html_content, height=iframe_height, scrolling=allow_scrolling)
 
 
 # ==========================================
@@ -877,7 +824,7 @@ if show_data:
                 {date_html}
             </div>
             """
-            iframe_height = get_table_iframe_height(date_df, is_summary=False)
+            iframe_height = get_table_iframe_height(len(date_df), has_copy_btn=False)
             allow_scrolling = iframe_height >= 600
             st.components.v1.html(wrapped_date_html, height=iframe_height, scrolling=allow_scrolling)
             
