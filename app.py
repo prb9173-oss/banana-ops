@@ -8,107 +8,101 @@ import requests
 import pandas as pd
 
 # ==========================================
-# 💡 [다크모드 원천 방어 및 신뢰성 딥 네이비 테마 고정]
+# 💡 [다크모드 방어 + 모던 테마 고정]
+# 컬러 토큰을 한 번만 정의하고 이후 규칙은 모두 그 값을 참조합니다.
+# (겹치는 선택자를 줄이기 위해 동일 목적의 규칙은 셀렉터를 콤마로 묶어 하나로 통합했습니다.)
 # ==========================================
-st.set_page_config(page_title="광고 데이터 추출기", layout="wide")
+st.set_page_config(page_title="광고 데이터 추출기", layout="wide", page_icon="📊")
 
-st.markdown("""
+PRIMARY = "#1E3A5F"       # 딥 네이비 (버튼, 강조)
+PRIMARY_HOVER = "#16304C"
+BG = "#F5F6F8"             # 앱 배경 (연한 쿨그레이)
+SURFACE = "#FFFFFF"
+BORDER = "#E3E6EB"
+TEXT = "#16181D"
+ACCENT_SOFT = "#EEF3FA"    # 표 헤더, 드롭다운 호버 등 은은한 강조
+
+st.markdown(f"""
     <style>
-    /* 하단 연동부에서 로직 에러가 나더라도 브라우저 배경이 다크 모드로 반전되지 않도록 최상단에서 화이트를 고정합니다. */
-    .stApp {
-        background-color: #FFFFFF !important;
-    }
-    section[data-testid="stSidebar"] {
-        background-color: #F8F9FA !important;
-        border-right: 1px solid #E0E0E0 !important;
-    }
-    p, span, label, h1, h2, h3, h4, h5, h6, li, strong, th, td {
-        color: #000000 !important;
-    }
-    .stMarkdown, [data-testid="stWidgetLabel"] p, .stCaptionContainer p {
-        color: #000000 !important;
-        font-weight: 500;
-    }
-    .stTextInput label p, .stSelectbox label p, .stDateInput label p, [data-testid="stSidebar"] label p {
-        color: #000000 !important;
-        font-weight: 700 !important;
-    }
-    div[data-baseweb="select"] > div {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-        border: 1px solid #CCCCCC !important;
-    }
-    div[data-baseweb="popover"] {
-        background-color: #FFFFFF !important;
-    }
-    div[role="listbox"] div, li[role="option"] {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-    }
-    
-    /* 차분하고 이성적인 연스카이 그레이 블루 톤으로 드롭다운 호버 하이라이트 지정 */
-    li[role="option"]:hover, div[role="option"]:hover {
-        background-color: #EBF4FA !important;
-        color: #000000 !important;
-    }
-    
-    /* 날짜 선택 인풋 박스 배경 흰색, 글자색 검정 고정 */
-    div[data-testid="stDateInput"] div {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-    }
-    div[data-testid="stDateInput"] input {
-        background-color: #FFFFFF !important;
-        color: #000000 !important;
-    }
-    
-    /* 💡 데이터 추출 버튼 외곽선 제거, 딥 네이비(#0A2540) 채우기, 텍스트 줄바꿈 방지 및 자동 너비 수립 */
-    div.stButton > button {
-        background-color: #0A2540 !important; /* 신뢰감 있는 딥 네이비 배경 */
-        border: none !important; /* 외곽 테두리 선 완전 제거 */
-        border-radius: 6px !important;
-        padding: 0.8rem 2.5rem !important;
-        font-size: 15px !important;
-        letter-spacing: 0.5px !important;
-        transition: all 0.3s ease;
-        width: auto !important; /* 가로 크기 자동 맞춤 */
-        white-space: nowrap !important; /* 위아래 여러 줄 줄바꿈 절대 방지 */
-        display: block !important;
-        margin: 0 auto !important; /* 정중앙 정렬 */
-        box-shadow: 0 4px 6px rgba(10, 37, 64, 0.15) !important; /* 입체 보정 효과 */
-    }
-    div.stButton > button:hover {
-        background-color: #1A365D !important; /* 오버 시 한 단계 부드러운 네이비 */
+    html, body, [class*="css"] {{
+        font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif !important;
+    }}
+
+    /* 다크모드로 반전되지 않도록 배경/사이드바 고정 */
+    .stApp {{ background-color: {BG} !important; }}
+    section[data-testid="stSidebar"] {{
+        background-color: {SURFACE} !important;
+        border-right: 1px solid {BORDER} !important;
+    }}
+
+    /* 텍스트 색상 고정 (다크모드 반전 방지) */
+    p, span, label, h1, h2, h3, h4, h5, h6, li, strong, th, td,
+    .stMarkdown, [data-testid="stWidgetLabel"] p, .stCaptionContainer p {{
+        color: {TEXT} !important;
+    }}
+    h1, h2, h3 {{ letter-spacing: -0.02em; font-weight: 700 !important; }}
+    .stTextInput label p, .stSelectbox label p, .stDateInput label p,
+    [data-testid="stSidebar"] label p {{
+        color: {TEXT} !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+    }}
+
+    /* 입력 요소 (셀렉트박스, 날짜, 드롭다운) */
+    div[data-baseweb="select"] > div,
+    div[data-testid="stDateInput"] div,
+    div[data-testid="stDateInput"] input {{
+        background-color: {SURFACE} !important;
+        color: {TEXT} !important;
+        border: 1px solid {BORDER} !important;
+        border-radius: 8px !important;
+    }}
+    div[data-baseweb="popover"],
+    div[role="listbox"] div, li[role="option"] {{
+        background-color: {SURFACE} !important;
+        color: {TEXT} !important;
+    }}
+    li[role="option"]:hover, div[role="option"]:hover {{
+        background-color: {ACCENT_SOFT} !important;
+        color: {TEXT} !important;
+    }}
+
+    /* 기본 버튼 */
+    div.stButton > button {{
+        background-color: {PRIMARY} !important;
         border: none !important;
-    }
-    
-    /* 전역 p 태그 간섭에 의한 색상 덮어쓰기를 원천 방어하도록 명확한 자식 선택자 수립 */
-    div.stButton > button p {
-        color: #FFFFFF !important; /* 글자색 완전한 흰색 보장 */
-        font-weight: 900 !important; /* 가장 두꺼운 강도의 굵은 볼드체 유지 */
-    }
-    div.stButton > button:hover p {
+        border-radius: 8px !important;
+        padding: 0.75rem 2.5rem !important;
+        font-size: 15px !important;
+        letter-spacing: 0.2px !important;
+        white-space: nowrap !important;
+        display: block !important;
+        margin: 0 auto !important;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08) !important;
+        transition: background-color 0.15s ease, box-shadow 0.15s ease;
+    }}
+    div.stButton > button:hover {{
+        background-color: {PRIMARY_HOVER} !important;
+        box-shadow: 0 4px 10px rgba(16, 24, 40, 0.12) !important;
+    }}
+    div.stButton > button p {{
         color: #FFFFFF !important;
-    }
-    
-    /* 사이드바 열고 닫는 단추(화살표 기호) 항상 보이도록 명도대비 고정 패치 */
-    button[data-testid="stSidebarCollapse"] {
-        background-color: #FAFAFA !important;
-        border: 1px solid #D0D0D0 !important;
-        color: #000000 !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
-    }
-    button[data-testid="stSidebarCollapse"] svg {
-        fill: #000000 !important;
-        color: #000000 !important;
-    }
-    button[data-testid="collapse-sidebar"] {
-        color: #000000 !important;
-    }
-    button[data-testid="collapse-sidebar"] svg {
-        fill: #000000 !important;
-        color: #000000 !important;
-    }
+        font-weight: 700 !important;
+    }}
+
+    /* 사이드바 접기/펴기 아이콘 */
+    button[data-testid="stSidebarCollapse"], button[data-testid="collapse-sidebar"] {{
+        background-color: {SURFACE} !important;
+        border: 1px solid {BORDER} !important;
+        color: {TEXT} !important;
+    }}
+    button[data-testid="stSidebarCollapse"] svg, button[data-testid="collapse-sidebar"] svg {{
+        fill: {TEXT} !important;
+        color: {TEXT} !important;
+    }}
+
+    /* info/warning/error 박스 라운딩 통일 */
+    div[data-testid="stAlert"] {{ border-radius: 10px !important; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -149,32 +143,38 @@ def get_header(method, uri, api_key, secret_key, customer_id):
 # ==========================================
 # [그리드 엔진] 브라우저 및 엑셀 드래그 복사용 표준 테이블 렌더러
 # ==========================================
+TABLE_BORDER = "#E3E6EB"
+TABLE_HEADER_BG = "#EEF3FA"          # 일반 표 헤더
+TABLE_HEADER_BG_SUMMARY = "#DCE4F0"  # 합계표 헤더 (한 톤 진하게)
+TABLE_ROW_ALT_BG = "#F7F9FB"
+
 def convert_df_to_html_grid(df, is_summary_table=False):
-    html = '<table style="width:100%; border-collapse:collapse; font-family:sans-serif; text-align:center; margin-top:10px; color:#000000 !important; border:1px solid #CBD5E0; white-space:nowrap !important;">'
-    
-    header_color = "#D9E2EC" if is_summary_table else "#EDF2F7"
-    html += f'<thead><tr style="background-color:{header_color}; border-bottom:2px solid #CCCCCC; font-weight:bold; height:36px; white-space:nowrap !important;">'
+    # color/white-space는 상속되는 속성이므로 최상위 table에서 한 번만 지정합니다.
+    html = (
+        '<table style="width:100%; border-collapse:collapse; font-family:inherit; '
+        f'text-align:center; margin-top:10px; color:#16181D; border:1px solid {TABLE_BORDER}; white-space:nowrap;">'
+    )
+
+    header_bg = TABLE_HEADER_BG_SUMMARY if is_summary_table else TABLE_HEADER_BG
+    html += f'<thead><tr style="background-color:{header_bg}; border-bottom:2px solid {TABLE_BORDER}; font-weight:600; height:36px;">'
     for col in df.columns:
-        html += f'<th style="padding:10px; border:1px solid #CBD5E0; color:#000000 !important; font-size:14px; white-space:nowrap !important;">{col}</th>'
+        html += f'<th style="padding:10px; border:1px solid {TABLE_BORDER}; font-size:14px;">{col}</th>'
     html += '</tr></thead><tbody>'
-    
+
     for i, row in df.iterrows():
-        row_style = "background-color:#F0F4F8;" if is_summary_table else "background-color:#FFFFFF;"
-        html += f'<tr style="{row_style} border-bottom:1px solid #E5E5E5; height:32px; white-space:nowrap !important;">'
-        
+        row_bg = TABLE_ROW_ALT_BG if is_summary_table else "#FFFFFF"
+        html += f'<tr style="background-color:{row_bg}; border-bottom:1px solid {TABLE_BORDER}; height:32px;">'
+
         for col in df.columns:
             val = row[col]
             if isinstance(val, (int, float)):
-                if "클릭률" in col:
-                    formatted_val = f"{val:.2f}%"
-                else:
-                    formatted_val = f"{int(val):,}"
+                formatted_val = f"{val:.2f}%" if "클릭률" in col else f"{int(val):,}"
             else:
                 formatted_val = str(val)
-                
-            html += f'<td style="padding:8px; border:1px solid #CBD5E0; color:#000000 !important; font-size:13px; white-space:nowrap !important;">{formatted_val}</td>'
+
+            html += f'<td style="padding:8px; border:1px solid {TABLE_BORDER}; font-size:13px;">{formatted_val}</td>'
         html += '</tr>'
-        
+
     html += '</tbody></table>'
     return html
 
@@ -210,24 +210,24 @@ def render_table_and_button_html(df, title, is_summary_table=False):
     unique_id = str(int(time.time() * 1000)) + str(abs(hash(title)))
     
     html_code = f"""
-    <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
+    <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
         {table_html}
         <button id="btn-{unique_id}" onclick="copyText()" style="
-            background-color: #0A2540 !important;
-            color: #FFFFFF !important;
-            border: none !important;
-            border-radius: 6px !important;
-            padding: 10px 16px !important;
-            font-size: 13px !important;
-            font-weight: bold !important;
-            cursor: pointer !important;
-            width: 100% !important;
-            margin-top: 10px !important;
-            box-shadow: 0 4px 6px rgba(10,37,64,0.1) !important;
-            text-align: center !important;
-            display: block !important;
-            transition: all 0.2s;
-        " onmouseover="this.style.backgroundColor='#1A365D'" onmouseout="this.style.backgroundColor='#0A2540'">
+            background-color: #1E3A5F;
+            color: #FFFFFF;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            box-shadow: 0 1px 2px rgba(16,24,40,0.08);
+            text-align: center;
+            display: block;
+            transition: background-color 0.15s ease;
+        " onmouseover="this.style.backgroundColor='#16304C'" onmouseout="this.style.backgroundColor='#1E3A5F'">
             📋 복사하기
         </button>
         <textarea id="area-{unique_id}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
@@ -262,13 +262,11 @@ def render_table_and_button_html(df, title, is_summary_table=False):
     function showCopied() {{
         var btn = document.getElementById('btn-{unique_id}');
         btn.innerHTML = '✅ 복사 완료';
-        btn.style.backgroundColor = '#C8E6C9'; 
-        btn.style.borderColor = '#4CAF50';
-        btn.style.color = '#000000';
+        btn.style.backgroundColor = '#DCFCE7';
+        btn.style.color = '#166534';
         setTimeout(function() {{
             btn.innerHTML = '📋 복사하기';
-            btn.style.backgroundColor = '#0A2540';
-            btn.style.borderColor = 'none';
+            btn.style.backgroundColor = '#1E3A5F';
             btn.style.color = '#FFFFFF';
         }}, 2000);
     }}
@@ -302,7 +300,7 @@ def render_table_with_copy_btn(df, title, is_summary_table=False, show_copy_btn=
         # 가로 테두리/여백 영역이 한계에 부딪혀 잘리지 않도록 세로 면적을 최소 140px로 여유롭게 할당했습니다.
         table_html = convert_df_to_html_grid(df, is_summary_table)
         wrapped_html = f"""
-        <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
+        <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
             {table_html}
         </div>
         """
@@ -875,7 +873,7 @@ if show_data:
         with col_date:
             date_html = convert_df_to_html_grid(date_df, is_summary_table=False)
             wrapped_date_html = f"""
-            <div style="font-family:sans-serif; color:#000000 !important; background-color:#FFFFFF; padding:5px;">
+            <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
                 {date_html}
             </div>
             """
