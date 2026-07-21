@@ -4,6 +4,7 @@ import time
 import hmac
 import hashlib
 import base64
+import html as html_lib
 import requests
 import pandas as pd
 
@@ -57,6 +58,33 @@ st.markdown(f"""
     }}
 
     div[data-testid="stAlert"] {{ border-radius: 10px; }}
+
+    /* 데이터 표 카드 + 복사 버튼 (표마다 반복 정의하지 않고 클래스 하나로 재사용) */
+    .data-card {{
+        background-color: {SURFACE};
+        border: 1px solid {BORDER};
+        border-radius: 10px;
+        padding: 10px;
+        margin-top: 6px;
+    }}
+    .copy-btn {{
+        background-color: {PRIMARY};
+        color: #FFFFFF;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        width: 100%;
+        margin-top: 10px;
+        box-shadow: 0 1px 2px rgba(16,24,40,0.08);
+        text-align: center;
+        display: block;
+        transition: background-color 0.15s ease;
+    }}
+    .copy-btn:hover {{ background-color: {PRIMARY_HOVER}; }}
+    .copy-btn.copied {{ background-color: #DCFCE7; color: #166534; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -224,37 +252,52 @@ def render_table_and_button_html(df, title, is_summary_table=False):
             btn.style.color = '#FFFFFF';
         }}, 2000);
     }}
+
+    // iframe 자신의 실제 콘텐츠 높이에 맞춰 프레임 높이를 스스로 보정합니다.
+    // (파이썬에서 픽셀 값을 미리 추정하는 방식은 폰트/줄바꿈 오차로 잘리는 문제가 있었습니다)
+    function resizeFrame() {{
+        try {{
+            var h = document.documentElement.scrollHeight;
+            if (window.frameElement) {{ window.frameElement.style.height = (h + 6) + 'px'; }}
+        }} catch (e) {{}}
+    }}
+    window.addEventListener('load', resizeFrame);
+    setTimeout(resizeFrame, 50);
+    setTimeout(resizeFrame, 300);
+    resizeFrame();
     </script>
     """
     return html_code
 
 
-# 표 실측 높이 기반 iframe 높이 계산 (여유 버퍼를 과하게 잡으면 표 아래에
-# 빈 흰 여백이 그대로 남아 배경과 어긋나 보이므로, 실제 렌더링 요소 기준으로 맞춥니다)
-def get_table_iframe_height(row_count, has_copy_btn):
-    header_and_rows = 38 + (32 * row_count)
-    extra = 90 if has_copy_btn else 20   # 복사 버튼 유무에 따른 실측 여백
-    return min(max(header_and_rows + extra, 120), 600)
+# 표 실측 높이 기반 iframe 초기 높이 (실제 최종 높이는 위 resizeFrame()이 렌더 직후 다시 보정합니다)
+def get_table_iframe_height(row_count):
+    return 40 + (34 * row_count) + 70
 
 
-# 요약합계표는 복사 버튼 없이 표만 렌더링합니다.
+# 복사 버튼이 없는 표는 iframe 없이 메인 화면에 바로 렌더링합니다.
+# (JS 클립보드 기능이 필요한 복사 버튼 표만 iframe이 꼭 필요합니다 — st.markdown은
+# 보안상 <script> 태그를 실행하지 않기 때문입니다. 버튼이 없으면 iframe도 필요 없고,
+# 높이를 추정할 필요도 없어 배경-표 사이 여백 문제 자체가 생기지 않습니다.)
+def render_plain_table(df, is_summary_table=False):
+    table_html = convert_df_to_html_grid(df, is_summary_table)
+    st.markdown(
+        f'<div style="background-color:#FFFFFF; border:1px solid #E3E6EB; '
+        f'border-radius:10px; padding:12px; margin-bottom:6px;">{table_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_table_with_copy_btn(df, title, is_summary_table=False, show_copy_btn=True):
     if title:
         st.markdown(f"##### {title}")
 
-    iframe_height = get_table_iframe_height(len(df), has_copy_btn=show_copy_btn)
-    allow_scrolling = iframe_height >= 600
-
     if show_copy_btn:
         html_content = render_table_and_button_html(df, title, is_summary_table)
+        init_height = get_table_iframe_height(len(df))
+        st.components.v1.html(html_content, height=init_height, scrolling=False)
     else:
-        table_html = convert_df_to_html_grid(df, is_summary_table)
-        html_content = f"""
-        <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
-            {table_html}
-        </div>
-        """
-    st.components.v1.html(html_content, height=iframe_height, scrolling=allow_scrolling)
+        render_plain_table(df, is_summary_table)
 
 
 # ==========================================
@@ -816,17 +859,9 @@ if show_data:
         # 1:1.2:1.2:1.2 비율 구성 (엑셀 템플릿 복사용 고유 열분할 뷰 유지)
         col_date, col1, col2, col3 = st.columns([1, 1.2, 1.2, 1.2])
         
-        # (1) 날짜 표 - 버튼 불필요하므로 convert_df_to_html_grid 후 components.html 로만 렌더링
+        # (1) 날짜 표 - 버튼이 필요 없으므로 iframe 없이 바로 렌더링합니다.
         with col_date:
-            date_html = convert_df_to_html_grid(date_df, is_summary_table=False)
-            wrapped_date_html = f"""
-            <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
-                {date_html}
-            </div>
-            """
-            iframe_height = get_table_iframe_height(len(date_df), has_copy_btn=False)
-            allow_scrolling = iframe_height >= 600
-            st.components.v1.html(wrapped_date_html, height=iframe_height, scrolling=allow_scrolling)
+            render_plain_table(date_df, is_summary_table=False)
             
         # (2) 노출수, 클릭수 표 - 빈 값("")을 주어 타이틀 없이 수치와 복사 단추만 콤팩트하게 출력
         with col1:
