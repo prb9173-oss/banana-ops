@@ -185,20 +185,12 @@ def dataframe_to_tsv_string(df):
 
 
 # ==========================================
-# 💡 [iframe 완전 제거 — 겹침/잘림 문제의 근본 원인 해결]
-# 지난 수정에서 넣은 "iframe이 자기 콘텐츠 크기에 맞춰 스스로 높이를 조절하는" 방식은
-# 실제로는 iframe 자기 자신의 CSS 높이만 바꿀 뿐, Streamlit이 그 iframe을 담아두려고
-# 미리 잡아둔 바깥 공간(레이아웃 상 예약된 자리)까지 같이 늘려주지는 못했습니다.
-# 그 결과 iframe이 원래 예약된 자리보다 커지면 다음 요소(예: "조회가 완료되었습니다" 알림)
-# 위로 겹쳐 보이는 문제가 생겼습니다. iframe의 실제 높이와, Streamlit이 화면에 잡아둔
-# 자리는 서로 다른 값이라 아무리 정교하게 계산해도 계속 어긋날 수밖에 없는 구조입니다.
-#
-# 그래서 iframe 자체를 걷어냈습니다. 표는 항상 메인 화면에 바로 렌더링하고(render_plain_table),
-# 복사 기능은 클립보드 JS를 직접 심는 대신 Streamlit이 기본 제공하는 st.code() 위젯을
-# 사용합니다 — 코드 블록에 마우스를 올리면 우측 상단에 복사 아이콘이 자동으로 뜨는 기능이
-# Streamlit에 이미 내장되어 있어서, 우리가 직접 만든 iframe/버튼/스크립트가 통째로 필요
-# 없어집니다. 레이아웃도 Streamlit이 알아서 정확히 계산하므로 겹침/잘림/여백 문제 자체가
-# 구조적으로 발생할 수 없습니다.
+# 💡 [복사 버튼 방식: 고정 높이로 되돌림]
+# 지난 버전의 문제는 "버튼이 있다는 것" 자체가 아니라, iframe이 스스로 자기 크기를
+# 조절하려다가 Streamlit이 미리 예약해 둔 자리와 어긋나서 다음 요소와 겹쳤던 거였습니다.
+# 그래서 자동 조절 스크립트는 완전히 빼고, 표+버튼에 필요한 높이를 미리 정확히 계산해서
+# "고정값"으로 넘깁니다. 고정값은 항상 Streamlit이 예약하는 자리와 정확히 같기 때문에
+# (스스로 늘어나거나 줄어들지 않으므로) 겹치거나 잘리는 문제 자체가 구조적으로 없습니다.
 # ==========================================
 
 def render_plain_table(df, is_summary_table=False):
@@ -210,16 +202,84 @@ def render_plain_table(df, is_summary_table=False):
     )
 
 
+def render_table_and_button_html(df, is_summary_table=False):
+    table_html = convert_df_to_html_grid(df, is_summary_table)
+    tsv_text = dataframe_to_tsv_string(df)
+    unique_id = str(int(time.time() * 1000)) + str(abs(hash(tsv_text)))
+
+    return f"""
+    <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
+        {table_html}
+        <button id="btn-{unique_id}" onclick="copyText()" style="
+            background-color: #1E3A5F;
+            color: #FFFFFF;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            box-shadow: 0 1px 2px rgba(16,24,40,0.08);
+            text-align: center;
+            display: block;
+            transition: background-color 0.15s ease;
+        " onmouseover="this.style.backgroundColor='#16304C'" onmouseout="this.style.backgroundColor='#1E3A5F'">
+            📋 복사하기
+        </button>
+        <textarea id="area-{unique_id}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
+    </div>
+    <script>
+    function copyText() {{
+        try {{
+            var text = document.getElementById('area-{unique_id}').value;
+            if (navigator.clipboard && navigator.clipboard.writeText) {{
+                navigator.clipboard.writeText(text).then(showCopied).catch(fallbackCopy);
+            }} else {{
+                fallbackCopy();
+            }}
+        }} catch (e) {{ fallbackCopy(); }}
+    }}
+    function fallbackCopy() {{
+        var t = document.getElementById('area-{unique_id}');
+        t.select();
+        t.setSelectionRange(0, 99999);
+        document.execCommand('copy');
+        showCopied();
+    }}
+    function showCopied() {{
+        var btn = document.getElementById('btn-{unique_id}');
+        btn.innerHTML = '✅ 복사 완료';
+        btn.style.backgroundColor = '#DCFCE7';
+        btn.style.color = '#166534';
+        setTimeout(function() {{
+            btn.innerHTML = '📋 복사하기';
+            btn.style.backgroundColor = '#1E3A5F';
+            btn.style.color = '#FFFFFF';
+        }}, 2000);
+    }}
+    </script>
+    """
+
+
+# 표+버튼이 실제로 차지하는 높이를 미리 계산합니다 (헤더 40 + 행당 34 + 버튼/여백 영역 70).
+# 여유를 살짝 더 둬서, 혹시 오차가 나더라도 "겹침"이 아니라 "약간의 빈 여백" 쪽으로만
+# 벗어나도록 했습니다 — 안전한 쪽으로만 오차가 나게 하는 게 핵심입니다.
+def get_table_iframe_height(row_count):
+    return min(600, 50 + (34 * row_count) + 70)
+
+
 def render_table_with_copy_btn(df, title, is_summary_table=False, show_copy_btn=True):
     if title:
         st.markdown(f"##### {title}")
 
-    render_plain_table(df, is_summary_table)
-
     if show_copy_btn:
-        # 우측 상단에 마우스를 올리면 나타나는 복사 아이콘으로 TSV 형식 그대로 복사됩니다
-        # (엑셀에 바로 붙여넣기 가능한 탭 구분 형식은 그대로 유지)
-        st.code(dataframe_to_tsv_string(df), language=None)
+        html_content = render_table_and_button_html(df, is_summary_table)
+        height = get_table_iframe_height(len(df))
+        st.components.v1.html(html_content, height=height, scrolling=(height >= 600))
+    else:
+        render_plain_table(df, is_summary_table)
 
 
 # ==========================================
