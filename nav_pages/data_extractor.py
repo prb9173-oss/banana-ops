@@ -244,8 +244,13 @@ def get_mock_keyword_stats(adgroup_id, ad_type, start_date, end_date):
 
     selected_kws = random.sample(keywords, min(len(keywords), 10))
 
-    selected_days = (end_date - start_date).days + 1
-    scale_factor = selected_days / 28.0
+    # 플레이스광고는 실제 API가 조회 기간과 무관하게 고정된 집계 기간만 제공하므로,
+    # mock 데이터도 실제 동작과 맞추기 위해 날짜 범위에 따라 스케일링하지 않습니다.
+    if ad_type == '플레이스광고':
+        scale_factor = 1.0
+    else:
+        selected_days = (end_date - start_date).days + 1
+        scale_factor = selected_days / 28.0
 
     rows = []
     for kw in selected_kws:
@@ -429,14 +434,9 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
                     "클릭수": clk
                 })
         if data_rows:
+            # 네이버 API가 플레이스 키워드 성과에는 조회 기간(timeRange)을 지원하지 않아,
+            # 항상 네이버 쪽 고정 집계 기간 데이터가 그대로 반환됩니다 (임의 비율 계산 없음).
             df = pd.DataFrame(data_rows)
-
-            selected_days = (end_date - start_date).days + 1
-            if selected_days != 28:
-                scale_coeff = selected_days / 28.0
-                df["노출수"] = (df["노출수"] * scale_coeff).round().astype(int)
-                df["클릭수"] = (df["클릭수"] * scale_coeff).round().astype(int)
-
             df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
             return df
         return None
@@ -621,20 +621,18 @@ if show_data:
                 end_date
             )
 
-        kw_df = None
-        if selected_ad_type != '플레이스광고':
-            if is_test_mode:
-                kw_df = get_mock_keyword_stats(selected_adg_id, selected_ad_type, start_date, end_date)
-            else:
-                kw_df = fetch_keyword_stats(
-                    input_customer_id,
-                    input_api_key,
-                    input_secret_key,
-                    selected_adg_id,
-                    start_date,
-                    end_date,
-                    selected_ad_type
-                )
+        if is_test_mode:
+            kw_df = get_mock_keyword_stats(selected_adg_id, selected_ad_type, start_date, end_date)
+        else:
+            kw_df = fetch_keyword_stats(
+                input_customer_id,
+                input_api_key,
+                input_secret_key,
+                selected_adg_id,
+                start_date,
+                end_date,
+                selected_ad_type
+            )
 
     if st.session_state.get('api_error_msg'):
         st.error(f"❌ 광고 데이터를 수집하는 과정에서 에러가 감지되었습니다. 원인을 점검해 주세요:\n\n{st.session_state['api_error_msg']}")
@@ -682,9 +680,15 @@ if show_data:
         with col3:
             render_table_with_copy_btn(cost_df, "", is_summary_table=False)
 
-        if selected_ad_type != '플레이스광고' and kw_df is not None and not kw_df.empty:
+        if kw_df is not None and not kw_df.empty:
             st.markdown("---")
-            render_table_with_copy_btn(kw_df, "📊 키워드별 검색어 성과 (클릭수 상위 10개)", is_summary_table=False)
+            if selected_ad_type == '플레이스광고':
+                kw_title = "📊 키워드별 검색어 성과 (클릭수 상위 10개 · 최근 약 30일 고정 집계)"
+                render_table_with_copy_btn(kw_df, kw_title, is_summary_table=False)
+                st.caption("⚠️ 네이버 API가 플레이스 키워드 성과에는 조회 기간(timeRange)을 지원하지 않아, 위에서 고른 시작일·종료일과 무관하게 네이버 쪽 고정 기간(약 최근 30일 전후로 추정 — 정확한 일수는 네이버가 문서화하지 않음) 데이터가 그대로 표시됩니다.")
+            else:
+                kw_title = "📊 키워드별 검색어 성과 (클릭수 상위 10개)"
+                render_table_with_copy_btn(kw_df, kw_title, is_summary_table=False)
 
         st.success("조회가 완료되었습니다!")
     else:
