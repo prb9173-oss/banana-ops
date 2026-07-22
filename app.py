@@ -4,7 +4,6 @@ import time
 import hmac
 import hashlib
 import base64
-import html as html_lib
 import requests
 import pandas as pd
 
@@ -24,9 +23,6 @@ st.set_page_config(page_title="광고 데이터 추출기", layout="wide", page_
 
 PRIMARY = "#1E3A5F"        # 딥 네이비 (버튼, 강조) — config.toml의 primaryColor와 동일하게 유지
 PRIMARY_HOVER = "#16304C"
-BG = "#F5F6F8"              # 앱 배경 — config.toml의 backgroundColor와 동일하게 유지
-SURFACE = "#FFFFFF"
-BORDER = "#E3E6EB"
 
 st.markdown(f"""
     <style>
@@ -58,33 +54,6 @@ st.markdown(f"""
     }}
 
     div[data-testid="stAlert"] {{ border-radius: 10px; }}
-
-    /* 데이터 표 카드 + 복사 버튼 (표마다 반복 정의하지 않고 클래스 하나로 재사용) */
-    .data-card {{
-        background-color: {SURFACE};
-        border: 1px solid {BORDER};
-        border-radius: 10px;
-        padding: 10px;
-        margin-top: 6px;
-    }}
-    .copy-btn {{
-        background-color: {PRIMARY};
-        color: #FFFFFF;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 16px;
-        font-size: 13px;
-        font-weight: 700;
-        cursor: pointer;
-        width: 100%;
-        margin-top: 10px;
-        box-shadow: 0 1px 2px rgba(16,24,40,0.08);
-        text-align: center;
-        display: block;
-        transition: background-color 0.15s ease;
-    }}
-    .copy-btn:hover {{ background-color: {PRIMARY_HOVER}; }}
-    .copy-btn.copied {{ background-color: #DCFCE7; color: #166534; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -412,35 +381,6 @@ def fetch_adgroups(customer_id, api_key, secret_key, campaign_id):
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _fetch_place_avg_bid_cached(customer_id, api_key, secret_key, adgroup_id):
-    BASE_URL = "https://api.searchad.naver.com"
-    uri = f"/ncc/adgroups/{adgroup_id}"
-    headers = get_header("GET", uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{uri}", headers=headers)
-    
-    if response.status_code == 200:
-        adg_info = response.json()
-        for field in ['averagePositionBid', 'exposureMinimumBid', 'estimatedBid']:
-            if field in adg_info and adg_info[field]:
-                return int(adg_info[field])
-                
-    try:
-        est_uri = f"/estimate/average-position-bid/adgroup/{adgroup_id}"
-        est_headers = get_header("GET", est_uri, api_key, secret_key, customer_id)
-        est_response = requests.get(f"{BASE_URL}{est_uri}", headers=est_headers)
-        if est_response.status_code == 200:
-            est_data = est_response.json()
-            if isinstance(est_data, dict) and 'bidAmt' in est_data:
-                return int(est_data['bidAmt'])
-    except Exception:
-        pass
-    return None
-
-def fetch_place_avg_bid(customer_id, api_key, secret_key, adgroup_id):
-    return _fetch_place_avg_bid_cached(customer_id, api_key, secret_key, adgroup_id)
-
-
-@st.cache_data(ttl=600, show_spinner=False)
 def _fetch_daily_stats_cached(customer_id, api_key, secret_key, adgroup_id, start_date, end_date):
     BASE_URL = "https://api.searchad.naver.com"
     uri = "/stats"
@@ -506,11 +446,6 @@ def _fetch_keyword_stats_place_cached(customer_id, api_key, secret_key, adgroup_
     }
     headers = get_header("GET", uri, api_key, secret_key, customer_id)
     response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
-    
-    if response.status_code != 200:
-        params.pop('timeRange', None)
-        response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
-        
     return response.status_code, response.text, response.json() if response.status_code == 200 else None
 
 
@@ -738,23 +673,6 @@ if not adgroup_list:
 adg_options = {g['nccAdgroupId']: g['name'] for g in adgroup_list}
 selected_adg_id = st.selectbox("상세 광고그룹", options=list(adg_options.keys()), format_func=lambda x: adg_options[x])
 
-
-# '평균 광고 노출 입찰가' 가이드 연동
-if selected_ad_type == '플레이스광고':
-    avg_bid_val = None
-    if not is_test_mode:
-        avg_bid_val = fetch_place_avg_bid(
-            input_customer_id, 
-            input_api_key, 
-            input_secret_key, 
-            selected_adg_id
-        )
-    else:
-        avg_bid_val = 1460
-        
-    if avg_bid_val is not None:
-        st.info(f"💡 **같은 지역 동종 업종 광고들의 평균 광고 노출 입찰가 참고하기 도움말**\n\n"
-                f"**평균 광고 노출 입찰가 : {avg_bid_val:,}**")
 
 st.markdown("---")
 
