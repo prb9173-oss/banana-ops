@@ -7,6 +7,16 @@ import base64
 import requests
 import pandas as pd
 
+# 네이버 API 응답이 없는 네트워크 구간(예: 클라우드 배포 환경)에서 무한 대기하지 않도록
+# 모든 API 호출에 공통 타임아웃을 둡니다.
+REQUEST_TIMEOUT = 10
+
+def _safe_get(url, headers, params=None):
+    try:
+        return requests.get(url, params=params, headers=headers, timeout=REQUEST_TIMEOUT), None
+    except requests.exceptions.RequestException as e:
+        return None, str(e)
+
 # ==========================================
 # 💡 [테마 고정 방식 전환]
 # 라이트/다크 모드에 따라 컴포넌트별로 색이 흔들리던 문제의 원인은, 테마를
@@ -343,7 +353,9 @@ def _fetch_campaigns_cached(customer_id, api_key, secret_key):
     BASE_URL = "https://api.searchad.naver.com"
     uri = "/ncc/campaigns"
     headers = get_header("GET", uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{uri}", headers=headers)
+    response, err = _safe_get(f"{BASE_URL}{uri}", headers)
+    if response is None:
+        return 0, f"네이버 서버와 통신할 수 없습니다: {err}", None
     return response.status_code, response.text, response.json() if response.status_code == 200 else None
 
 def fetch_campaigns(customer_id, api_key, secret_key, ad_type):
@@ -368,7 +380,9 @@ def _fetch_adgroups_cached(customer_id, api_key, secret_key, campaign_id):
     uri = "/ncc/adgroups"
     params = {'nccCampaignId': campaign_id}
     headers = get_header("GET", uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
+    response, err = _safe_get(f"{BASE_URL}{uri}", headers, params)
+    if response is None:
+        return 0, f"네이버 서버와 통신할 수 없습니다: {err}", None
     return response.status_code, response.text, response.json() if response.status_code == 200 else None
 
 def fetch_adgroups(customer_id, api_key, secret_key, campaign_id):
@@ -395,7 +409,9 @@ def _fetch_daily_stats_cached(customer_id, api_key, secret_key, adgroup_id, star
         'timeIncrement': '1'
     }
     headers = get_header("GET", uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
+    response, err = _safe_get(f"{BASE_URL}{uri}", headers, params)
+    if response is None:
+        return 0, f"네이버 서버와 통신할 수 없습니다: {err}", None
     return response.status_code, response.text, response.json() if response.status_code == 200 else None
 
 def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date):
@@ -445,7 +461,9 @@ def _fetch_keyword_stats_place_cached(customer_id, api_key, secret_key, adgroup_
         'statType': 'NPLA_SCH_KEYWORD'
     }
     headers = get_header("GET", uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{uri}", params=params, headers=headers)
+    response, err = _safe_get(f"{BASE_URL}{uri}", headers, params)
+    if response is None:
+        return 0, f"네이버 서버와 통신할 수 없습니다: {err}", None
     return response.status_code, response.text, response.json() if response.status_code == 200 else None
 
 
@@ -455,7 +473,9 @@ def _fetch_keyword_list_cached(customer_id, api_key, secret_key, adgroup_id):
     kw_list_uri = "/ncc/keywords"
     kw_params = {'nccAdgroupId': adgroup_id}
     kw_headers = get_header("GET", kw_list_uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{kw_list_uri}", params=kw_params, headers=kw_headers)
+    response, err = _safe_get(f"{BASE_URL}{kw_list_uri}", kw_headers, kw_params)
+    if response is None:
+        return 0, f"네이버 서버와 통신할 수 없습니다: {err}", None
     return response.status_code, response.text, response.json() if response.status_code == 200 else None
 
 
@@ -469,7 +489,9 @@ def _fetch_keyword_stats_chunk_cached(customer_id, api_key, secret_key, chunk_id
         'timeRange': f'{{"since":"{formatted_start}","until":"{formatted_end}"}}'
     }
     headers = get_header("GET", stats_uri, api_key, secret_key, customer_id)
-    response = requests.get(f"{BASE_URL}{stats_uri}", params=params, headers=headers)
+    response, err = _safe_get(f"{BASE_URL}{stats_uri}", headers, params)
+    if response is None:
+        return 0, None
     return response.status_code, response.json() if response.status_code == 200 else None
 
 
