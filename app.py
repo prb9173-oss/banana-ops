@@ -4,6 +4,7 @@ import time
 import hmac
 import hashlib
 import base64
+import html as html_lib
 import requests
 import pandas as pd
 
@@ -33,6 +34,9 @@ st.set_page_config(page_title="광고 데이터 추출기", layout="wide", page_
 
 PRIMARY = "#1E3A5F"        # 딥 네이비 (버튼, 강조) — config.toml의 primaryColor와 동일하게 유지
 PRIMARY_HOVER = "#16304C"
+BG = "#F5F6F8"              # 앱 배경 — config.toml의 backgroundColor와 동일하게 유지
+SURFACE = "#FFFFFF"
+BORDER = "#E3E6EB"
 
 st.markdown(f"""
     <style>
@@ -64,6 +68,33 @@ st.markdown(f"""
     }}
 
     div[data-testid="stAlert"] {{ border-radius: 10px; }}
+
+    /* 데이터 표 카드 + 복사 버튼 (표마다 반복 정의하지 않고 클래스 하나로 재사용) */
+    .data-card {{
+        background-color: {SURFACE};
+        border: 1px solid {BORDER};
+        border-radius: 10px;
+        padding: 10px;
+        margin-top: 6px;
+    }}
+    .copy-btn {{
+        background-color: {PRIMARY};
+        color: #FFFFFF;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        width: 100%;
+        margin-top: 10px;
+        box-shadow: 0 1px 2px rgba(16,24,40,0.08);
+        text-align: center;
+        display: block;
+        transition: background-color 0.15s ease;
+    }}
+    .copy-btn:hover {{ background-color: {PRIMARY_HOVER}; }}
+    .copy-btn.copied {{ background-color: #DCFCE7; color: #166534; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -290,10 +321,10 @@ def get_mock_daily_stats(adgroup_id, start_date, end_date):
     while curr <= end_date:
         date_list.append(curr)
         curr += datetime.timedelta(days=1)
-    
+
     import random
     random.seed(hash(adgroup_id) + int(start_date.strftime("%Y%m%d")))
-    
+
     rows = []
     for d in date_list:
         imp = random.randint(4000, 15000)
@@ -301,7 +332,7 @@ def get_mock_daily_stats(adgroup_id, start_date, end_date):
         cost = clk * random.randint(500, 900)
         ctr = round((clk / imp) * 100, 2) if imp > 0 else 0.0
         cpc = int(cost / clk) if clk > 0 else 0
-        
+
         rows.append({
             "날짜": d.strftime("%Y-%m-%d"),
             "노출수": imp,
@@ -315,24 +346,24 @@ def get_mock_daily_stats(adgroup_id, start_date, end_date):
 def get_mock_keyword_stats(adgroup_id, ad_type, start_date, end_date):
     import random
     random.seed(hash(adgroup_id))
-    
+
     if ad_type == '플레이스광고':
-        keywords = ["강남역 맛집", "강남역 점심 추천", "역삼 근처 조용한 일식집", "강남 주차가능 맛집", "강남 스마트플레이스 예약", 
+        keywords = ["강남역 맛집", "강남역 점심 추천", "역삼 근처 조용한 일식집", "강남 주차가능 맛집", "강남 스마트플레이스 예약",
                     "강남 핫플레이스 추천", "모임하기 좋은 일식당", "강남 가성비 횟집", "강남역 데이트 코스"]
     else:
-        keywords = ["마케팅 대행사", "데이터 분석", "광고 가이드", "보고서 엑셀", "스마트스토어 홍보", 
+        keywords = ["마케팅 대행사", "데이터 분석", "광고 가이드", "보고서 엑셀", "스마트스토어 홍보",
                     "주간 성과표", "블로그마케팅", "지역 소상공인 광고", "인하우스 마케터"]
-    
+
     selected_kws = random.sample(keywords, min(len(keywords), 10))
-    
+
     selected_days = (end_date - start_date).days + 1
     scale_factor = selected_days / 28.0
-    
+
     rows = []
     for kw in selected_kws:
         base_imp = random.randint(4000, 15000)
         base_clk = random.randint(80, 350)
-        
+
         rows.append({
             "키워드명": kw,
             "노출수": int(base_imp * scale_factor),
@@ -345,7 +376,7 @@ def get_mock_keyword_stats(adgroup_id, ad_type, start_date, end_date):
 
 # ==========================================
 # [네이버 API 통신 캐싱 및 모듈 구조 설계]
-# Streamlit 세션 상태(session_state) 쓰기 오동작을 원천 방지하기 위해 
+# Streamlit 세션 상태(session_state) 쓰기 오동작을 원천 방지하기 위해
 # 순수 통신부만 안전하게 캐싱 처리한 뒤 메인 프레임워크와 결합합니다.
 # ==========================================
 @st.cache_data(ttl=600, show_spinner=False)
@@ -360,11 +391,11 @@ def _fetch_campaigns_cached(customer_id, api_key, secret_key):
 
 def fetch_campaigns(customer_id, api_key, secret_key, ad_type):
     status_code, res_text, campaigns = _fetch_campaigns_cached(customer_id, api_key, secret_key)
-    
+
     if status_code != 200:
         st.session_state['api_error_msg'] = f"캠페인 데이터 연동 과정에서 통신 응답 오류가 발생했습니다. (HTTP {status_code}): {res_text}"
         return []
-    
+
     type_mapping = {
         '파워링크광고': ['WEB_SITE'],
         '플레이스광고': ['PLACE'],
@@ -387,7 +418,7 @@ def _fetch_adgroups_cached(customer_id, api_key, secret_key, campaign_id):
 
 def fetch_adgroups(customer_id, api_key, secret_key, campaign_id):
     status_code, res_text, data = _fetch_adgroups_cached(customer_id, api_key, secret_key, campaign_id)
-    
+
     if status_code != 200:
         st.session_state['api_error_msg'] = f"광고그룹 목록을 연동하는 데 실패했습니다. (HTTP {status_code}): {res_text}"
         return []
@@ -395,13 +426,42 @@ def fetch_adgroups(customer_id, api_key, secret_key, campaign_id):
 
 
 @st.cache_data(ttl=600, show_spinner=False)
+def _fetch_place_avg_bid_cached(customer_id, api_key, secret_key, adgroup_id):
+    BASE_URL = "https://api.searchad.naver.com"
+    uri = f"/ncc/adgroups/{adgroup_id}"
+    headers = get_header("GET", uri, api_key, secret_key, customer_id)
+    response, err = _safe_get(f"{BASE_URL}{uri}", headers)
+
+    if response is not None and response.status_code == 200:
+        adg_info = response.json()
+        for field in ['averagePositionBid', 'exposureMinimumBid', 'estimatedBid']:
+            if field in adg_info and adg_info[field]:
+                return int(adg_info[field])
+
+    try:
+        est_uri = f"/estimate/average-position-bid/adgroup/{adgroup_id}"
+        est_headers = get_header("GET", est_uri, api_key, secret_key, customer_id)
+        est_response, est_err = _safe_get(f"{BASE_URL}{est_uri}", est_headers)
+        if est_response is not None and est_response.status_code == 200:
+            est_data = est_response.json()
+            if isinstance(est_data, dict) and 'bidAmt' in est_data:
+                return int(est_data['bidAmt'])
+    except Exception:
+        pass
+    return None
+
+def fetch_place_avg_bid(customer_id, api_key, secret_key, adgroup_id):
+    return _fetch_place_avg_bid_cached(customer_id, api_key, secret_key, adgroup_id)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
 def _fetch_daily_stats_cached(customer_id, api_key, secret_key, adgroup_id, start_date, end_date):
     BASE_URL = "https://api.searchad.naver.com"
     uri = "/stats"
-    
+
     formatted_start = start_date.strftime("%Y-%m-%d")
     formatted_end = end_date.strftime("%Y-%m-%d")
-    
+
     params = {
         'id': adgroup_id,
         'fields': '["impCnt","clkCnt","ctr","cpc","salesAmt"]',
@@ -416,29 +476,29 @@ def _fetch_daily_stats_cached(customer_id, api_key, secret_key, adgroup_id, star
 
 def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date):
     status_code, res_text, stats_json = _fetch_daily_stats_cached(customer_id, api_key, secret_key, adgroup_id, start_date, end_date)
-    
+
     if status_code != 200:
         st.session_state['api_error_msg'] = f"일자별 세부 실적 통계를 가져오는 과정에서 오류가 발생했습니다. (HTTP {status_code}): {res_text}"
         return None
-        
+
     data_rows = []
     if stats_json and 'data' in stats_json:
         # 안전성 강화: API 응답 배열 크기와 조회 날짜 간의 매핑 정합성 검증 추가
         data_len = len(stats_json['data'])
         expected_days = (end_date - start_date).days + 1
-        
+
         for i, stat in enumerate(stats_json['data']):
             if i < expected_days:
                 dt = (start_date + datetime.timedelta(days=i)).strftime("%Y-%m-%d")
             else:
                 dt = "계산불가"
-                
+
             imp = int(stat.get('impCnt', 0))
             clk = int(stat.get('clkCnt', 0))
             ctr = float(stat.get('ctr', 0.0))
             cpc = int(stat.get('cpc', 0))
             cost = int(stat.get('salesAmt', 0))
-            
+
             data_rows.append({
                 "날짜": dt,
                 "노출수": imp,
@@ -464,6 +524,13 @@ def _fetch_keyword_stats_place_cached(customer_id, api_key, secret_key, adgroup_
     response, err = _safe_get(f"{BASE_URL}{uri}", headers, params)
     if response is None:
         return 0, f"네이버 서버와 통신할 수 없습니다: {err}", None
+
+    if response.status_code != 200:
+        params.pop('timeRange', None)
+        response, err = _safe_get(f"{BASE_URL}{uri}", headers, params)
+        if response is None:
+            return 0, f"네이버 서버와 통신할 수 없습니다: {err}", None
+
     return response.status_code, response.text, response.json() if response.status_code == 200 else None
 
 
@@ -498,11 +565,11 @@ def _fetch_keyword_stats_chunk_cached(customer_id, api_key, secret_key, chunk_id
 def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date, ad_type):
     if ad_type == '플레이스광고':
         status_code, res_text, stats_json = _fetch_keyword_stats_place_cached(customer_id, api_key, secret_key, adgroup_id)
-        
+
         if status_code != 200:
             st.session_state['api_error_msg'] = f"플레이스 키워드 성과를 가져오는 과정에서 오류가 발생했습니다. (HTTP {status_code}): {res_text}"
             return None
-            
+
         data_rows = []
         items = stats_json if isinstance(stats_json, list) else stats_json.get('data', [])
         for item in items:
@@ -517,39 +584,39 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
                 })
         if data_rows:
             df = pd.DataFrame(data_rows)
-            
+
             selected_days = (end_date - start_date).days + 1
             if selected_days != 28:
                 scale_coeff = selected_days / 28.0
                 df["노출수"] = (df["노출수"] * scale_coeff).round().astype(int)
                 df["클릭수"] = (df["클릭수"] * scale_coeff).round().astype(int)
-                
+
             df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
             return df
         return None
-        
+
     else:
         status_code, res_text, keywords = _fetch_keyword_list_cached(customer_id, api_key, secret_key, adgroup_id)
-        
+
         if status_code != 200:
             st.session_state['api_error_msg'] = f"광고 키워드 목록을 수집하는 데 실패했습니다. (HTTP {status_code}): {res_text}"
             return None
-            
+
         if not keywords:
             return None
-            
+
         kw_ids = [k.get('nccKeywordId') for k in keywords]
         kw_map = {k.get('nccKeywordId'): k.get('keyword') for k in keywords}
-        
+
         formatted_start = start_date.strftime("%Y-%m-%d")
         formatted_end = end_date.strftime("%Y-%m-%d")
-        
+
         data_rows = []
         chunk_size = 50
         for i in range(0, len(kw_ids), chunk_size):
             chunk_ids = tuple(kw_ids[i:i+chunk_size])
             c_status_code, stats_json = _fetch_keyword_stats_chunk_cached(customer_id, api_key, secret_key, chunk_ids, formatted_start, formatted_end)
-            
+
             if c_status_code == 200:
                 if stats_json and 'data' in stats_json:
                     for stat in stats_json['data']:
@@ -562,7 +629,7 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
                             "노출수": imp,
                             "클릭수": clk
                         })
-                        
+
         if data_rows:
             df = pd.DataFrame(data_rows)
             df = df.sort_values(by="클릭수", ascending=False).head(10).reset_index(drop=True)
@@ -571,7 +638,7 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
 
 
 # ==========================================
-# [사이드바 설계 및 Secrets 연동] 
+# [사이드바 설계 및 Secrets 연동]
 # ==========================================
 st.sidebar.markdown("### 📁 광고 계정 선택")
 
@@ -599,7 +666,7 @@ def update_inputs_from_profile():
         st.session_state['input_customer_id'] = keys["customer_id"]
         st.session_state['input_api_key'] = keys["api_key"]
         st.session_state['input_secret_key'] = keys["secret_key"]
-    
+
     st.session_state['selected_ad_type'] = '플레이스광고'
 
 if 'selected_profile' not in st.session_state:
@@ -607,7 +674,7 @@ if 'selected_profile' not in st.session_state:
     update_inputs_from_profile()
 
 selected_profile = st.sidebar.selectbox(
-    "조회할 광고 계정을 선택해 주세요.", 
+    "조회할 광고 계정을 선택해 주세요.",
     options=options_list,
     key='selected_profile',
     on_change=update_inputs_from_profile
@@ -619,7 +686,7 @@ input_secret_key = st.session_state.get('input_secret_key', '')
 
 
 # ==========================================
-# [메인 제어] 
+# [메인 제어]
 # ==========================================
 st.subheader("광고 데이터 추출기")
 
@@ -646,7 +713,7 @@ if start_date > end_date:
 st.markdown("### 광고 유형")
 
 selected_ad_type = st.selectbox(
-    "광고그룹", 
+    "광고그룹",
     ['플레이스광고', '파워링크광고', '파워컨텐츠광고'],
     key='selected_ad_type'
 )
@@ -655,16 +722,16 @@ if is_test_mode:
     campaign_list = get_mock_campaigns(selected_ad_type)
 else:
     campaign_list = fetch_campaigns(
-        input_customer_id, 
-        input_api_key, 
-        input_secret_key, 
+        input_customer_id,
+        input_api_key,
+        input_secret_key,
         selected_ad_type
     )
 
 if not campaign_list:
     if st.session_state.get('api_error_msg'):
         st.error(f"❌ 데이터 추출 과정에서 아래와 같은 원인으로 실패했습니다:\n\n{st.session_state['api_error_msg']}")
-        st.session_state['api_error_msg'] = ""  
+        st.session_state['api_error_msg'] = ""
     else:
         st.warning("선택하신 유형에 부합하는 캠페인이 확인되지 않습니다.")
     st.stop()
@@ -677,9 +744,9 @@ if is_test_mode:
     adgroup_list = get_mock_adgroups(selected_camp_id)
 else:
     adgroup_list = fetch_adgroups(
-        input_customer_id, 
-        input_api_key, 
-        input_secret_key, 
+        input_customer_id,
+        input_api_key,
+        input_secret_key,
         selected_camp_id
     )
 
@@ -696,6 +763,23 @@ adg_options = {g['nccAdgroupId']: g['name'] for g in adgroup_list}
 selected_adg_id = st.selectbox("상세 광고그룹", options=list(adg_options.keys()), format_func=lambda x: adg_options[x])
 
 
+# '평균 광고 노출 입찰가' 가이드 연동
+if selected_ad_type == '플레이스광고':
+    avg_bid_val = None
+    if not is_test_mode:
+        avg_bid_val = fetch_place_avg_bid(
+            input_customer_id,
+            input_api_key,
+            input_secret_key,
+            selected_adg_id
+        )
+    else:
+        avg_bid_val = 1460
+
+    if avg_bid_val is not None:
+        st.info(f"💡 **같은 지역 동종 업종 광고들의 평균 광고 노출 입찰가 참고하기 도움말**\n\n"
+                f"**평균 광고 노출 입찰가 : {avg_bid_val:,}**")
+
 st.markdown("---")
 
 # 데이터 추출 버튼을 가로로 확장하고 중앙에 정렬하기 위해 분할 컴포넌트를 사용합니다.
@@ -711,21 +795,21 @@ st.markdown("###")
 # ==========================================
 if show_data:
     st.session_state['api_error_msg'] = ""
-    
+
     with st.spinner("네이버 광고 서버로부터 원시 데이터를 정합 수집 중입니다..."):
         # 1. 일별 상세 지표 로드
         if is_test_mode:
             raw_df = get_mock_daily_stats(selected_adg_id, start_date, end_date)
         else:
             raw_df = fetch_daily_stats(
-                input_customer_id, 
-                input_api_key, 
-                input_secret_key, 
-                selected_adg_id, 
-                start_date, 
+                input_customer_id,
+                input_api_key,
+                input_secret_key,
+                selected_adg_id,
+                start_date,
                 end_date
             )
-            
+
         # 2. 키워드별 성과 지표 로드 (플레이스광고 아닐 시에만 후행 호출)
         kw_df = None
         if selected_ad_type != '플레이스광고':
@@ -733,29 +817,29 @@ if show_data:
                 kw_df = get_mock_keyword_stats(selected_adg_id, selected_ad_type, start_date, end_date)
             else:
                 kw_df = fetch_keyword_stats(
-                    input_customer_id, 
-                    input_api_key, 
-                    input_secret_key, 
-                    selected_adg_id, 
-                    start_date, 
-                    end_date, 
+                    input_customer_id,
+                    input_api_key,
+                    input_secret_key,
+                    selected_adg_id,
+                    start_date,
+                    end_date,
                     selected_ad_type
                 )
-                
+
     if st.session_state.get('api_error_msg'):
         st.error(f"❌ 광고 데이터를 수집하는 과정에서 에러가 감지되었습니다. 원인을 점검해 주세요:\n\n{st.session_state['api_error_msg']}")
-        st.session_state['api_error_msg'] = ""  
+        st.session_state['api_error_msg'] = ""
         st.stop()
-        
+
     # 일별 데이터 표출 시작
     if raw_df is not None and not raw_df.empty:
         total_imp = raw_df["노출수"].sum()
         total_clk = raw_df["클릭수"].sum()
         total_cost = raw_df["총비용"].sum()
-        
+
         total_ctr = round((total_clk / total_imp) * 100, 2) if total_imp > 0 else 0.0
         total_cpc = int(total_cost / total_clk) if total_clk > 0 else 0
-        
+
         summary_df = pd.DataFrame([{
             "총 노출수": total_imp,
             "총 클릭수": total_clk,
@@ -763,45 +847,45 @@ if show_data:
             "평균 CPC": total_cpc,
             "총비용 합계": total_cost
         }])
-        
+
         # 날짜 제외 복사 기능을 위한 지표별 개별 슬라이싱 데이터 프레임셋 분리
         date_df = raw_df[["날짜"]].copy()
         imp_clk_df = raw_df[["노출수", "클릭수"]].copy()
         cpc_df = raw_df[["평균 CPC"]].copy()
         cost_df = raw_df[["총비용"]].copy()
-        
+
         # 주간 총 합계표 부분은 우측 복사하기 버튼이 나타나지 않도록 처리합니다 (show_copy_btn=False)
         render_table_with_copy_btn(summary_df, "🏆 주간 총 합계표", is_summary_table=True, show_copy_btn=False)
-        
+
         st.markdown("###") # 레이아웃 여백 보정
-        
+
         # 가로 격자 상단에 단 하나의 대제목만 정적 마킹합니다.
         st.markdown("#### 📊 일별 데이터")
-        
+
         # 1:1.2:1.2:1.2 비율 구성 (엑셀 템플릿 복사용 고유 열분할 뷰 유지)
         col_date, col1, col2, col3 = st.columns([1, 1.2, 1.2, 1.2])
-        
+
         # (1) 날짜 표 - 버튼이 필요 없으므로 iframe 없이 바로 렌더링합니다.
         with col_date:
             render_plain_table(date_df, is_summary_table=False)
-            
+
         # (2) 노출수, 클릭수 표 - 빈 값("")을 주어 타이틀 없이 수치와 복사 단추만 콤팩트하게 출력
         with col1:
             render_table_with_copy_btn(imp_clk_df, "", is_summary_table=False)
-            
+
         # (3) 평균 CPC 표
         with col2:
             render_table_with_copy_btn(cpc_df, "", is_summary_table=False)
-            
+
         # (4) 총비용 표
         with col3:
             render_table_with_copy_btn(cost_df, "", is_summary_table=False)
-            
+
         # 플레이스광고가 아닐 때 2단계 영역(키워드 성과 리포트)도 아래에 연쇄 출력합니다.
         if selected_ad_type != '플레이스광고' and kw_df is not None and not kw_df.empty:
             st.markdown("---")
             render_table_with_copy_btn(kw_df, "📊 키워드별 검색어 성과 (클릭수 상위 10개)", is_summary_table=False)
-            
+
         st.success("조회가 완료되었습니다!")
     else:
         st.error("해당 광고그룹에 해당하는 일별 상세 통계 정보가 부존재합니다.")
