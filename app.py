@@ -107,6 +107,30 @@ st.markdown(f"""
     .pill-kw-off {{ background:#F1F5F9; color:#64748B; margin-bottom: 0; }}
     .pill-kw-new {{ background:#EEF3FA; color:#3B5A8A; margin-bottom: 0; }}
 
+    /* 플레이스 순위 전일 대비 변동 배지 */
+    .pill-rank-up {{ background:#DCFCE7; color:#166534; margin-bottom: 0; }}
+    .pill-rank-down {{ background:#FEE2E2; color:#991B1B; margin-bottom: 0; }}
+    .pill-rank-same {{ background:#F1F5F9; color:#64748B; margin-bottom: 0; }}
+    .pill-rank-unknown {{ background:#FEF3C7; color:#92400E; margin-bottom: 0; }}
+
+    /* 플레이스 순위 결과 목록 (키워드별 현재 순위 + 전일 대비) */
+    .rank-status-card {{
+        padding: 4px 16px !important;
+        margin-bottom: 2px !important;
+    }}
+    .rank-status-row {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid #EEF0F3;
+    }}
+    .rank-status-row:last-child {{ border-bottom: none; }}
+    .rank-status-info {{ display: flex; flex-direction: column; }}
+    .rank-kw {{ font-size: 14px; font-weight: 600; color: #16181D; }}
+    .rank-meta {{ font-size: 12px; color: {MUTED_TEXT}; margin-top: 2px; }}
+    .rank-status-value {{ display: flex; align-items: center; gap: 6px; }}
+
     /* On/Off 버튼을 상태 박스 기준 가로 중앙에, 바짝 붙여서 배치 */
     div[class*="st-key-onoff_actions"] {{
         display: flex !important;
@@ -184,6 +208,15 @@ st.markdown(f"""
     }}
     div[class*="st-key-bundle_card_"][class*="_open"] {{
         padding-bottom: 26px !important;
+    }}
+    /* 플레이스 순위 키워드 카드: 시즌 키워드 묶음 카드와 동일한 시각 언어 재사용 */
+    div[class*="st-key-pr_kwcard_"] {{
+        background-color: #FFFFFF;
+        padding-bottom: 14px !important;
+        margin-bottom: 8px !important;
+    }}
+    div[class*="st-key-pr_kwcard_"] div[data-testid="stHorizontalBlock"] {{
+        align-items: center !important;
     }}
     /* vertical_alignment="center"가 실제로는 stretch로 렌더링되는 문제 보정:
        제목+줄바꿈된 키워드 텍스트 블록 기준으로 버튼 행을 정확히 세로 중앙에 오도록 강제 */
@@ -266,6 +299,29 @@ st.markdown(f"""
     div[class*="st-key-delete_"] button p {{
         color: #DC2626 !important;
         font-weight: 600 !important;
+    }}
+
+    /* 플레이스 순위 키워드 삭제: 두꺼운 테두리 박스 대신 옅은 배경만으로 구분,
+       가로로 넓게 채워서 클릭 영역을 눈에 띄고 넉넉하게 만든다 */
+    div[class*="st-key-kwdel_"] button {{
+        background-color: #FEF2F2 !important;
+        border: none !important;
+        box-shadow: none !important;
+        width: 56px !important;
+        min-width: unset !important;
+        padding: 8px 0 !important;
+        margin: 0 0 0 auto !important;
+        display: block !important;
+        border-radius: 6px !important;
+    }}
+    div[class*="st-key-kwdel_"] button:hover {{
+        background-color: #FEE2E2 !important;
+    }}
+    div[class*="st-key-kwdel_"] button p {{
+        color: #DC2626 !important;
+        font-size: 20px !important;
+        font-weight: 700 !important;
+        line-height: 1 !important;
     }}
     div[class*="st-key-cancel_"] button {{
         background-color: #FFFFFF !important;
