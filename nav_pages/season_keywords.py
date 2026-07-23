@@ -1,11 +1,76 @@
+import time
+import hmac
+import hashlib
+import base64
+import requests
 import streamlit as st
 from supabase import create_client
+
+NAVER_BASE_URL = "https://api.searchad.naver.com"
+NAVER_REQUEST_TIMEOUT = 10
 
 
 @st.cache_resource
 def get_supabase_client():
     sb = st.secrets["supabase"]
     return create_client(sb["url"], sb["key"])
+
+
+def _naver_signature(timestamp, method, uri, secret_key):
+    message = f"{timestamp}.{method}.{uri}"
+    hash_obj = hmac.new(secret_key.encode("utf-8"), message.encode("utf-8"), hashlib.sha256)
+    return base64.b64encode(hash_obj.digest()).decode("utf-8")
+
+
+def _naver_header(method, uri, api_key, secret_key, customer_id):
+    timestamp = str(int(time.time() * 1000))
+    signature = _naver_signature(timestamp, method, uri, secret_key)
+    return {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Timestamp': timestamp,
+        'X-API-KEY': api_key,
+        'X-Customer': str(customer_id),
+        'X-Signature': signature,
+    }
+
+
+def fetch_adgroup_keywords_live(customer_id, api_key, secret_key, adgroup_id):
+    uri = "/ncc/keywords"
+    headers = _naver_header("GET", uri, api_key, secret_key, customer_id)
+    r = requests.get(
+        f"{NAVER_BASE_URL}{uri}", params={'nccAdgroupId': adgroup_id},
+        headers=headers, timeout=NAVER_REQUEST_TIMEOUT,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def create_keywords_live(customer_id, api_key, secret_key, adgroup_id, keyword_texts):
+    uri = "/ncc/keywords"
+    headers = _naver_header("POST", uri, api_key, secret_key, customer_id)
+    body = [{"keyword": kw} for kw in keyword_texts]
+    r = requests.post(
+        f"{NAVER_BASE_URL}{uri}", params={'nccAdgroupId': adgroup_id}, json=body,
+        headers=headers, timeout=NAVER_REQUEST_TIMEOUT,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def set_keywords_lock_live(customer_id, api_key, secret_key, keyword_objs, lock):
+    uri = "/ncc/keywords"
+    headers = _naver_header("PUT", uri, api_key, secret_key, customer_id)
+    body = []
+    for kw in keyword_objs:
+        updated = dict(kw)
+        updated["userLock"] = lock
+        body.append(updated)
+    r = requests.put(
+        f"{NAVER_BASE_URL}{uri}", params={'fields': 'userLock'}, json=body,
+        headers=headers, timeout=NAVER_REQUEST_TIMEOUT,
+    )
+    r.raise_for_status()
+    return r.json()
 
 
 def fetch_bundles():
@@ -149,16 +214,102 @@ else:
     selected_bundle = next(b for b in bundles if b["id"] == selected_bundle_id)
     selected_store_row = store_options[selected_store]
 
-    st.markdown(f"**{selected_store}** 매장에 **'{selected_bundle['name']}'** 묶음을 적용하면 아래 키워드가 추가되거나(신규) 켜집니다(기존 OFF 상태):")
-    st.markdown(
-        '<div class="feature-card">' + ", ".join(selected_bundle["keywords"]) + "</div>",
-        unsafe_allow_html=True,
-    )
     st.caption(
         f"연결된 계정: {selected_store_row['naver_account_key']} · "
         f"캠페인: {selected_store_row['campaign_id']} · "
         f"광고그룹: {selected_store_row['adgroup_id']}"
     )
 
-    st.markdown("###")
-    st.info("💡 실제 네이버 광고 계정에 키워드를 추가/on/off 하는 기능은 다음 단계에서 구현 예정입니다. 지금은 선택 화면까지만 완성된 상태입니다.")
+    naver_acct = st.secrets[selected_store_row["naver_account_key"]]
+
+    try:
+        live_keywords = fetch_adgroup_keywords_live(
+            naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
+            selected_store_row["adgroup_id"],
+        )
+        live_error = None
+    except Exception as e:
+        live_keywords = []
+        live_error = str(e)
+
+    if live_error:
+        st.error(f"❌ 네이버 계정에서 현재 키워드 상태를 가져오는 데 실패했습니다: {live_error}")
+    else:
+        live_by_text = {k["keyword"]: k for k in live_keywords}
+
+        status_rows_html = []
+        for kw in selected_bundle["keywords"]:
+            if kw in live_by_text:
+                is_on = not live_by_text[kw]["userLock"]
+                pill_class, pill_label = ("pill-kw-on", "ON") if is_on else ("pill-kw-off", "OFF")
+            else:
+                pill_class, pill_label = "pill-kw-new", "신규"
+            status_rows_html.append(
+                f'<div class="kw-status-row"><span>{kw}</span>'
+                f'<span class="status-pill {pill_class}">{pill_label}</span></div>'
+            )
+
+        st.markdown(f"**{selected_store}** 매장 · **'{selected_bundle['name']}'** 묶음 현재 상태 (실시간):")
+        st.markdown(
+            '<div class="feature-card kw-status-card">' + "".join(status_rows_html) + "</div>",
+            unsafe_allow_html=True,
+        )
+
+        confirm_key = f"confirm_action_{selected_store_row['id']}_{selected_bundle_id}"
+
+        with st.container(key="onoff_actions"):
+            if st.button("키워드 On", key="btn_turn_on"):
+                st.session_state[confirm_key] = "on"
+            if st.button("키워드 Off", key="btn_turn_off"):
+                st.session_state[confirm_key] = "off"
+
+        pending = st.session_state.get(confirm_key)
+        if pending:
+            action_label = "켜기" if pending == "on" else "끄기"
+            with st.container(key="confirm_panel"):
+                st.markdown(
+                    f'<div class="confirm-text">정말 <b>{selected_store}</b> 매장에 '
+                    f"'<b>{selected_bundle['name']}</b>' 묶음을 <b>{action_label}</b> 하시겠습니까?"
+                    f'<div class="confirm-subtext">실제 네이버 광고 계정(파워링크)에 바로 반영됩니다.</div></div>',
+                    unsafe_allow_html=True,
+                )
+                col_yes, col_no = st.columns(2)
+                with col_yes:
+                    if st.button("예", key="confirm_yes"):
+                        try:
+                            if pending == "on":
+                                to_create = [kw for kw in selected_bundle["keywords"] if kw not in live_by_text]
+                                to_unlock = [
+                                    live_by_text[kw] for kw in selected_bundle["keywords"]
+                                    if kw in live_by_text and live_by_text[kw]["userLock"]
+                                ]
+                                if to_create:
+                                    create_keywords_live(
+                                        naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
+                                        selected_store_row["adgroup_id"], to_create,
+                                    )
+                                if to_unlock:
+                                    set_keywords_lock_live(
+                                        naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
+                                        to_unlock, lock=False,
+                                    )
+                                st.success(f"✅ {len(to_create)}개 신규 추가, {len(to_unlock)}개 ON 처리했습니다.")
+                            else:
+                                to_lock = [
+                                    live_by_text[kw] for kw in selected_bundle["keywords"]
+                                    if kw in live_by_text and not live_by_text[kw]["userLock"]
+                                ]
+                                if to_lock:
+                                    set_keywords_lock_live(
+                                        naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
+                                        to_lock, lock=True,
+                                    )
+                                st.success(f"✅ {len(to_lock)}개 OFF 처리했습니다.")
+                            st.session_state[confirm_key] = None
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ 적용 중 오류가 발생했습니다: {e}")
+                with col_no:
+                    if st.button("아니오", key="confirm_no"):
+                        st.session_state[confirm_key] = None
+                        st.rerun()

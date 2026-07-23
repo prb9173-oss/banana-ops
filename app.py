@@ -88,6 +88,75 @@ st.markdown(f"""
     .pill-progress {{ background:#FEF3C7; color:#92400E; }}
     .pill-planned {{ background:#EEF3FA; color:#3B5A8A; }}
 
+    /* 매장별 키워드 on/off 실시간 상태 목록 */
+    .kw-status-card {{
+        padding: 4px 16px !important;
+        margin-bottom: 2px !important;
+    }}
+    .kw-status-row {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 9px 0;
+        border-bottom: 1px solid #EEF0F3;
+        font-size: 14px;
+        color: #16181D;
+    }}
+    .kw-status-row:last-child {{ border-bottom: none; }}
+    .pill-kw-on {{ background:#DCFCE7; color:#166534; margin-bottom: 0; }}
+    .pill-kw-off {{ background:#F1F5F9; color:#64748B; margin-bottom: 0; }}
+    .pill-kw-new {{ background:#EEF3FA; color:#3B5A8A; margin-bottom: 0; }}
+
+    /* On/Off 버튼을 상태 박스 기준 가로 중앙에, 바짝 붙여서 배치 */
+    div[class*="st-key-onoff_actions"] {{
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: center !important;
+        gap: 12px !important;
+        margin-top: 4px !important;
+    }}
+    div[class*="st-key-onoff_actions"] > div {{
+        width: auto !important;
+    }}
+
+    /* 재확인 패널: 경고색 대신 흰 배경 + 좌측 강조선으로 모던하게 구분 */
+    div[class*="st-key-confirm_panel"] {{
+        background-color: #FFFFFF !important;
+        border: 1px solid {BORDER} !important;
+        border-left: 4px solid {PRIMARY} !important;
+        border-radius: 10px !important;
+        padding: 18px 20px !important;
+        box-shadow: 0 1px 2px rgba(16,24,40,0.04);
+    }}
+    .confirm-text {{
+        font-size: 15px;
+        color: #16181D;
+        line-height: 1.6;
+        margin-bottom: 14px;
+    }}
+    .confirm-subtext {{
+        font-size: 13px;
+        color: {MUTED_TEXT};
+        font-weight: 400;
+        margin-top: 2px;
+    }}
+    div[class*="st-key-confirm_yes"] button {{
+        background-color: {PRIMARY} !important;
+        border: none !important;
+    }}
+    div[class*="st-key-confirm_yes"] button p {{
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+    }}
+    div[class*="st-key-confirm_no"] button {{
+        background-color: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+    }}
+    div[class*="st-key-confirm_no"] button p {{
+        color: #475569 !important;
+        font-weight: 600 !important;
+    }}
+
     /* 시즌 키워드 묶음 카드: 흰 배경 + 진한 텍스트로 가독성 확보 */
     /* 하단 패딩을 상단(15px)과 맞춰 시각적으로 대칭이 되도록 별도로 키움
        (마지막 자식 요소의 padding은 Streamlit이 지워버려서 컨테이너 자체에 지정) */
