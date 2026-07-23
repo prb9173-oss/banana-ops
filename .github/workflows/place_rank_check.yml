@@ -1,8 +1,11 @@
 name: Place Rank Check
 
 on:
-  # 처음엔 수동 실행으로만 검증하고, CI 환경(비한국 IP)에서 실제로
-  # 안정적으로 동작하는 것을 몇 번 확인한 뒤에만 schedule을 추가한다.
+  # 매일 한국시간 09:00(UTC 00:00)에 자동 실행. 수동 실행도 그대로 남겨둔다.
+  # 참고: GitHub Actions의 schedule은 "정확히 그 시각"을 보장하지 않고
+  # 몇 분(드물게 그 이상) 늦게 시작될 수 있다.
+  schedule:
+    - cron: "0 0 * * *"
   workflow_dispatch: {}
 
 jobs:
