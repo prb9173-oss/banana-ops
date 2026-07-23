@@ -75,8 +75,16 @@ def set_keywords_lock_live(customer_id, api_key, secret_key, keyword_objs, lock)
 
 def fetch_bundles():
     client = get_supabase_client()
-    res = client.table("season_keyword_bundles").select("*").order("created_at", desc=True).execute()
+    res = client.table("season_keyword_bundles").select("*").order("display_order").execute()
     return res.data or []
+
+
+def swap_bundle_order(bundle_a, bundle_b):
+    client = get_supabase_client()
+    order_a = bundle_a["display_order"]
+    order_b = bundle_b["display_order"]
+    client.table("season_keyword_bundles").update({"display_order": order_b}).eq("id", bundle_a["id"]).execute()
+    client.table("season_keyword_bundles").update({"display_order": order_a}).eq("id", bundle_b["id"]).execute()
 
 
 def fetch_stores():
@@ -121,9 +129,11 @@ with st.form("add_bundle_form", clear_on_submit=True):
         elif not keywords:
             st.warning("키워드를 최소 1개 이상 입력해 주세요.")
         else:
+            next_order = max([b.get("display_order") or 0 for b in bundles], default=0) + 1
             get_supabase_client().table("season_keyword_bundles").insert({
                 "name": bundle_name.strip(),
                 "keywords": keywords,
+                "display_order": next_order,
             }).execute()
             st.success(f"'{bundle_name.strip()}' 묶음이 추가되었습니다.")
             st.rerun()
@@ -139,9 +149,9 @@ st.markdown("#### 📚 저장된 시즌 키워드 묶음")
 if not bundles:
     st.info("아직 저장된 시즌 키워드 묶음이 없습니다. 위에서 먼저 추가해 주세요.")
 else:
-    for bundle in bundles:
+    for idx, bundle in enumerate(bundles):
         with st.container(border=True, key=f"bundle_card_{bundle['id']}"):
-            col_info, col_actions = st.columns([6, 2], vertical_alignment="center")
+            col_info, col_actions = st.columns([5, 3], vertical_alignment="center")
             with col_info:
                 st.markdown(f"**{bundle['name']}** · 키워드 {len(bundle['keywords'])}개")
                 st.markdown(
@@ -150,6 +160,12 @@ else:
                 )
             with col_actions:
                 with st.container(key=f"actions_{bundle['id']}"):
+                    if st.button("▲", key=f"up_{bundle['id']}", disabled=(idx == 0)):
+                        swap_bundle_order(bundle, bundles[idx - 1])
+                        st.rerun()
+                    if st.button("▼", key=f"down_{bundle['id']}", disabled=(idx == len(bundles) - 1)):
+                        swap_bundle_order(bundle, bundles[idx + 1])
+                        st.rerun()
                     if st.button("수정", key=f"edit_{bundle['id']}"):
                         st.session_state[f"editing_{bundle['id']}"] = not st.session_state.get(f"editing_{bundle['id']}", False)
                     if st.button("삭제", key=f"delete_{bundle['id']}"):
@@ -181,7 +197,6 @@ else:
                         if st.button("취소", key=f"cancel_{bundle['id']}"):
                             st.session_state[f"editing_{bundle['id']}"] = False
                             st.rerun()
-        st.markdown("###")
 
 st.markdown("###")
 

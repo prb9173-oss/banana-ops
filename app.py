@@ -163,6 +163,12 @@ st.markdown(f"""
     div[class*="st-key-bundle_card_"] {{
         background-color: #FFFFFF;
         padding-bottom: 31px !important;
+        margin-bottom: 10px !important;
+    }}
+    /* vertical_alignment="center"가 실제로는 stretch로 렌더링되는 문제 보정:
+       제목+줄바꿈된 키워드 텍스트 블록 기준으로 버튼 행을 정확히 세로 중앙에 오도록 강제 */
+    div[class*="st-key-bundle_card_"] div[data-testid="stHorizontalBlock"] {{
+        align-items: center !important;
     }}
     .kw-text {{
         color: #16181D;
@@ -170,7 +176,9 @@ st.markdown(f"""
         line-height: 1.6;
     }}
 
-    /* 묶음 카드의 수정/삭제 버튼: 컴팩트한 크기 + 역할별 색상 구분 */
+    /* 묶음 카드의 순서(▲▼)/수정/삭제 버튼: 컴팩트한 크기 + 역할별 색상 구분 */
+    div[class*="st-key-up_"] button,
+    div[class*="st-key-down_"] button,
     div[class*="st-key-edit_"] button,
     div[class*="st-key-delete_"] button,
     div[class*="st-key-save_"] button,
@@ -182,6 +190,24 @@ st.markdown(f"""
         font-size: 12.5px !important;
         border-radius: 6px !important;
         box-shadow: none !important;
+    }}
+    div[class*="st-key-up_"] button,
+    div[class*="st-key-down_"] button {{
+        background-color: #475569 !important;
+        border: none !important;
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+        min-height: 30px !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }}
+    div[class*="st-key-up_"] button p,
+    div[class*="st-key-down_"] button p {{
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
     }}
     div[class*="st-key-edit_"] button {{
         background-color: #FFFFFF !important;
