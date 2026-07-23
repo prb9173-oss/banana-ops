@@ -89,8 +89,11 @@ st.markdown(f"""
     .pill-planned {{ background:#EEF3FA; color:#3B5A8A; }}
 
     /* 시즌 키워드 묶음 카드: 흰 배경 + 진한 텍스트로 가독성 확보 */
+    /* 하단 패딩을 상단(15px)과 맞춰 시각적으로 대칭이 되도록 별도로 키움
+       (마지막 자식 요소의 padding은 Streamlit이 지워버려서 컨테이너 자체에 지정) */
     div[class*="st-key-bundle_card_"] {{
         background-color: #FFFFFF;
+        padding-bottom: 31px !important;
     }}
     .kw-text {{
         color: #16181D;
@@ -145,10 +148,18 @@ st.markdown(f"""
     }}
 
     /* 수정/삭제, 저장/취소 버튼을 나란히 딱 붙여서 배치 (컬럼이 넓어져도 버튼끼리 멀어지지 않도록) */
-    div[class*="st-key-actions_"],
+    /* 수정/삭제는 카드 우측 끝에, 저장/취소는 입력창과 맞춰 좌측에 배치 */
+    div[class*="st-key-actions_"] {{
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: flex-end !important;
+        gap: 8px !important;
+        align-items: center !important;
+    }}
     div[class*="st-key-editform_actions_"] {{
         display: flex !important;
         flex-direction: row !important;
+        justify-content: flex-start !important;
         gap: 8px !important;
         align-items: center !important;
     }}
