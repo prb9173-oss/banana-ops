@@ -93,22 +93,23 @@ else:
 
             if st.session_state.get(f"editing_{bundle['id']}", False):
                 with st.container(key=f"edit_panel_{bundle['id']}"):
-                    st.markdown('<div class="edit-panel-label">➕ 새 키워드 추가</div>', unsafe_allow_html=True)
-                    new_kw_raw = st.text_area(
-                        "추가할 키워드 (한 줄에 하나씩)",
-                        key=f"new_kw_{bundle['id']}",
+                    st.markdown('<div class="edit-panel-label">✏️ 키워드 수정 (쉼표로 구분)</div>', unsafe_allow_html=True)
+                    edited_kw_raw = st.text_area(
+                        "키워드 (쉼표로 구분)",
+                        value=", ".join(bundle["keywords"]),
+                        key=f"edit_kw_{bundle['id']}",
                         height=100,
                         label_visibility="collapsed",
                     )
                     with st.container(key=f"editform_actions_{bundle['id']}"):
                         if st.button("저장", key=f"save_{bundle['id']}"):
-                            new_kws = [kw.strip() for kw in new_kw_raw.splitlines() if kw.strip()]
+                            new_kws = [kw.strip() for kw in edited_kw_raw.split(",") if kw.strip()]
                             if not new_kws:
-                                st.warning("추가할 키워드를 입력해 주세요.")
+                                st.warning("키워드를 최소 1개 이상 남겨주세요.")
                             else:
-                                merged = list(dict.fromkeys(bundle["keywords"] + new_kws))
+                                deduped = list(dict.fromkeys(new_kws))
                                 get_supabase_client().table("season_keyword_bundles").update(
-                                    {"keywords": merged}
+                                    {"keywords": deduped}
                                 ).eq("id", bundle["id"]).execute()
                                 st.session_state[f"editing_{bundle['id']}"] = False
                                 st.rerun()
