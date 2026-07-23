@@ -1,0 +1,25 @@
+name: Place Rank Check
+
+on:
+  # 처음엔 수동 실행으로만 검증하고, CI 환경(비한국 IP)에서 실제로
+  # 안정적으로 동작하는 것을 몇 번 확인한 뒤에만 schedule을 추가한다.
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run place rank check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/check_place_rank.py
