@@ -76,20 +76,20 @@ if not bundles:
 else:
     for bundle in bundles:
         with st.container(border=True, key=f"bundle_card_{bundle['id']}"):
-            col_info, col_edit, col_delete = st.columns([5, 1, 1], vertical_alignment="center")
+            col_info, col_actions = st.columns([6, 2], vertical_alignment="center")
             with col_info:
                 st.markdown(f"**{bundle['name']}** · 키워드 {len(bundle['keywords'])}개")
                 st.markdown(
                     f'<div class="kw-text">{", ".join(bundle["keywords"])}</div>',
                     unsafe_allow_html=True,
                 )
-            with col_edit:
-                if st.button("수정", key=f"edit_{bundle['id']}"):
-                    st.session_state[f"editing_{bundle['id']}"] = not st.session_state.get(f"editing_{bundle['id']}", False)
-            with col_delete:
-                if st.button("삭제", key=f"delete_{bundle['id']}"):
-                    get_supabase_client().table("season_keyword_bundles").delete().eq("id", bundle["id"]).execute()
-                    st.rerun()
+            with col_actions:
+                with st.container(key=f"actions_{bundle['id']}"):
+                    if st.button("수정", key=f"edit_{bundle['id']}"):
+                        st.session_state[f"editing_{bundle['id']}"] = not st.session_state.get(f"editing_{bundle['id']}", False)
+                    if st.button("삭제", key=f"delete_{bundle['id']}"):
+                        get_supabase_client().table("season_keyword_bundles").delete().eq("id", bundle["id"]).execute()
+                        st.rerun()
 
             if st.session_state.get(f"editing_{bundle['id']}", False):
                 with st.container(key=f"edit_panel_{bundle['id']}"):
@@ -100,8 +100,7 @@ else:
                         height=100,
                         label_visibility="collapsed",
                     )
-                    col_save, col_cancel = st.columns([1, 1])
-                    with col_save:
+                    with st.container(key=f"editform_actions_{bundle['id']}"):
                         if st.button("저장", key=f"save_{bundle['id']}"):
                             new_kws = [kw.strip() for kw in new_kw_raw.splitlines() if kw.strip()]
                             if not new_kws:
@@ -113,7 +112,6 @@ else:
                                 ).eq("id", bundle["id"]).execute()
                                 st.session_state[f"editing_{bundle['id']}"] = False
                                 st.rerun()
-                    with col_cancel:
                         if st.button("취소", key=f"cancel_{bundle['id']}"):
                             st.session_state[f"editing_{bundle['id']}"] = False
                             st.rerun()

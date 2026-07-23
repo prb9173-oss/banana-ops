@@ -139,6 +139,23 @@ st.markdown(f"""
         background-color: {PRIMARY} !important;
         border: none !important;
     }}
+    div[class*="st-key-save_"] button p {{
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+    }}
+
+    /* 수정/삭제, 저장/취소 버튼을 나란히 딱 붙여서 배치 (컬럼이 넓어져도 버튼끼리 멀어지지 않도록) */
+    div[class*="st-key-actions_"],
+    div[class*="st-key-editform_actions_"] {{
+        display: flex !important;
+        flex-direction: row !important;
+        gap: 8px !important;
+        align-items: center !important;
+    }}
+    div[class*="st-key-actions_"] > div,
+    div[class*="st-key-editform_actions_"] > div {{
+        width: auto !important;
+    }}
 
     /* 묶음 수정 시 나타나는 "키워드 추가" 패널: 기존 키워드 영역과 구분되는 배경/테두리 */
     div[class*="st-key-edit_panel_"] {{
