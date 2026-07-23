@@ -1,7 +1,10 @@
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 from supabase import create_client
+
+KST = ZoneInfo("Asia/Seoul")
 
 
 @st.cache_resource
@@ -46,9 +49,11 @@ def fetch_all_checks(keyword_ids):
 
 
 def format_checked_at(checked_at):
+    """서버가 어느 타임존에서 돌든(Streamlit Cloud는 UTC) 항상 한국 시간 기준으로
+    보이도록 시스템 로컬 타임존(astimezone())이 아니라 Asia/Seoul로 명시 변환한다."""
     try:
-        dt = datetime.fromisoformat(checked_at.replace("Z", "+00:00"))
-        return dt.astimezone().strftime("%m/%d %H:%M")
+        dt = datetime.fromisoformat(checked_at.replace("Z", "+00:00")).astimezone(KST)
+        return dt.strftime("%m월 %d일 %H:%M")
     except Exception:
         return checked_at
 
@@ -56,7 +61,7 @@ def format_checked_at(checked_at):
 def find_check_for_date(checks, target_date):
     for c in checks:
         try:
-            checked_date = datetime.fromisoformat(c["checked_at"].replace("Z", "+00:00")).astimezone().date()
+            checked_date = datetime.fromisoformat(c["checked_at"].replace("Z", "+00:00")).astimezone(KST).date()
         except Exception:
             continue
         if checked_date == target_date:
@@ -167,7 +172,9 @@ with st.container(border=True, key="section_rank_results"):
     if not keywords:
         st.info("추적 중인 타겟 키워드가 없습니다. 위에서 키워드를 추가해 주세요.")
     else:
-        selected_date = st.date_input("조회할 날짜", value=date.today(), key="pr_selected_date")
+        selected_date = st.date_input(
+            "조회할 날짜", value=datetime.now(KST).date(), key="pr_selected_date"
+        )
         previous_date = selected_date - timedelta(days=1)
 
         for kw in keywords:
@@ -189,6 +196,6 @@ with st.container(border=True, key="section_rank_results"):
                         ).execute()
                         st.rerun()
     st.caption(
-        "⚠️ 실제 순위 체크(스크래핑)는 아직 연결되지 않았습니다 — "
-        "이 화면은 데이터 구조와 표시 방식만 준비된 상태입니다."
+        "⚠️ 순위 체크는 GitHub Actions에서 수동 실행으로만 동작합니다 — "
+        "매일 자동 실행(스케줄)은 아직 켜지 않은 상태입니다."
     )
