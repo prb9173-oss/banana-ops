@@ -75,15 +75,48 @@ if not bundles:
     st.info("아직 저장된 시즌 키워드 묶음이 없습니다. 위에서 먼저 추가해 주세요.")
 else:
     for bundle in bundles:
-        with st.container(border=True):
-            col_info, col_delete = st.columns([5, 1])
+        with st.container(border=True, key=f"bundle_card_{bundle['id']}"):
+            col_info, col_edit, col_delete = st.columns([5, 1, 1], vertical_alignment="center")
             with col_info:
                 st.markdown(f"**{bundle['name']}** · 키워드 {len(bundle['keywords'])}개")
-                st.caption(", ".join(bundle["keywords"]))
+                st.markdown(
+                    f'<div class="kw-text">{", ".join(bundle["keywords"])}</div>',
+                    unsafe_allow_html=True,
+                )
+            with col_edit:
+                if st.button("수정", key=f"edit_{bundle['id']}"):
+                    st.session_state[f"editing_{bundle['id']}"] = not st.session_state.get(f"editing_{bundle['id']}", False)
             with col_delete:
                 if st.button("삭제", key=f"delete_{bundle['id']}"):
                     get_supabase_client().table("season_keyword_bundles").delete().eq("id", bundle["id"]).execute()
                     st.rerun()
+
+            if st.session_state.get(f"editing_{bundle['id']}", False):
+                with st.container(key=f"edit_panel_{bundle['id']}"):
+                    st.markdown('<div class="edit-panel-label">➕ 새 키워드 추가</div>', unsafe_allow_html=True)
+                    new_kw_raw = st.text_area(
+                        "추가할 키워드 (한 줄에 하나씩)",
+                        key=f"new_kw_{bundle['id']}",
+                        height=100,
+                        label_visibility="collapsed",
+                    )
+                    col_save, col_cancel = st.columns([1, 1])
+                    with col_save:
+                        if st.button("저장", key=f"save_{bundle['id']}"):
+                            new_kws = [kw.strip() for kw in new_kw_raw.splitlines() if kw.strip()]
+                            if not new_kws:
+                                st.warning("추가할 키워드를 입력해 주세요.")
+                            else:
+                                merged = list(dict.fromkeys(bundle["keywords"] + new_kws))
+                                get_supabase_client().table("season_keyword_bundles").update(
+                                    {"keywords": merged}
+                                ).eq("id", bundle["id"]).execute()
+                                st.session_state[f"editing_{bundle['id']}"] = False
+                                st.rerun()
+                    with col_cancel:
+                        if st.button("취소", key=f"cancel_{bundle['id']}"):
+                            st.session_state[f"editing_{bundle['id']}"] = False
+                            st.rerun()
         st.markdown("###")
 
 st.markdown("###")

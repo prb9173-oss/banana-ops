@@ -88,6 +88,73 @@ st.markdown(f"""
     .pill-progress {{ background:#FEF3C7; color:#92400E; }}
     .pill-planned {{ background:#EEF3FA; color:#3B5A8A; }}
 
+    /* 시즌 키워드 묶음 카드: 흰 배경 + 진한 텍스트로 가독성 확보 */
+    div[class*="st-key-bundle_card_"] {{
+        background-color: #FFFFFF;
+    }}
+    .kw-text {{
+        color: #16181D;
+        font-size: 14px;
+        line-height: 1.6;
+    }}
+
+    /* 묶음 카드의 수정/삭제 버튼: 컴팩트한 크기 + 역할별 색상 구분 */
+    div[class*="st-key-edit_"] button,
+    div[class*="st-key-delete_"] button,
+    div[class*="st-key-save_"] button,
+    div[class*="st-key-cancel_"] button {{
+        display: inline-block !important;
+        width: auto !important;
+        margin: 0 !important;
+        padding: 0.3rem 0.9rem !important;
+        font-size: 12.5px !important;
+        border-radius: 6px !important;
+        box-shadow: none !important;
+    }}
+    div[class*="st-key-edit_"] button {{
+        background-color: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+    }}
+    div[class*="st-key-edit_"] button p {{
+        color: #475569 !important;
+        font-weight: 600 !important;
+    }}
+    div[class*="st-key-delete_"] button {{
+        background-color: #FEF2F2 !important;
+        border: 1px solid #FCA5A5 !important;
+    }}
+    div[class*="st-key-delete_"] button p {{
+        color: #DC2626 !important;
+        font-weight: 600 !important;
+    }}
+    div[class*="st-key-cancel_"] button {{
+        background-color: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+    }}
+    div[class*="st-key-cancel_"] button p {{
+        color: #475569 !important;
+        font-weight: 600 !important;
+    }}
+    div[class*="st-key-save_"] button {{
+        background-color: {PRIMARY} !important;
+        border: none !important;
+    }}
+
+    /* 묶음 수정 시 나타나는 "키워드 추가" 패널: 기존 키워드 영역과 구분되는 배경/테두리 */
+    div[class*="st-key-edit_panel_"] {{
+        background-color: #F7F9FB;
+        border: 1px dashed #CBD5E1;
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-top: 10px;
+    }}
+    .edit-panel-label {{
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #3B5A8A;
+        margin-bottom: 6px;
+    }}
+
     /* ---- 사이드바 폭 / 내비게이션 항목 크기 조정 ---- */
     section[data-testid="stSidebar"] {{
         width: 250px !important;
