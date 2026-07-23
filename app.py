@@ -30,8 +30,8 @@ st.markdown(f"""
         background-color: {PRIMARY};
         border: none;
         border-radius: 8px;
-        padding: 0.75rem 2.5rem;
-        font-size: 15px;
+        padding: 0.45rem 1.4rem;
+        font-size: 13.5px;
         letter-spacing: 0.2px;
         white-space: nowrap;
         box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
@@ -157,13 +157,33 @@ st.markdown(f"""
         font-weight: 600 !important;
     }}
 
+    /* 시즌 키워드 페이지의 기능별 구역(매장 관리/묶음 추가/묶음 목록)을
+       하나의 카드 박스로 감싸 서로 명확히 분리되도록 함 */
+    div[class*="st-key-section_"] {{
+        background-color: #FAFBFC;
+        border: 1px solid {BORDER};
+        border-radius: 14px;
+        padding: 20px 22px;
+        margin-bottom: 20px !important;
+        box-shadow: 0 1px 2px rgba(16,24,40,0.04);
+    }}
+    div[class*="st-key-section_"] h4 {{
+        margin-top: 0 !important;
+    }}
+
     /* 시즌 키워드 묶음 카드: 흰 배경 + 진한 텍스트로 가독성 확보 */
-    /* 하단 패딩을 상단(15px)과 맞춰 시각적으로 대칭이 되도록 별도로 키움
-       (마지막 자식 요소의 padding은 Streamlit이 지워버려서 컨테이너 자체에 지정) */
+    /* 하단 패딩을 상단과 맞춰 시각적으로 대칭이 되도록 지정
+       (마지막 자식 요소의 padding은 Streamlit이 지워버려서 컨테이너 자체에 지정).
+       접힌 카드는 헤더 행만 있으므로 펼친 카드보다 하단 패딩을 작게 둔다. */
     div[class*="st-key-bundle_card_"] {{
         background-color: #FFFFFF;
-        padding-bottom: 31px !important;
-        margin-bottom: 10px !important;
+        margin-bottom: 8px !important;
+    }}
+    div[class*="st-key-bundle_card_"][class*="_closed"] {{
+        padding-bottom: 14px !important;
+    }}
+    div[class*="st-key-bundle_card_"][class*="_open"] {{
+        padding-bottom: 26px !important;
     }}
     /* vertical_alignment="center"가 실제로는 stretch로 렌더링되는 문제 보정:
        제목+줄바꿈된 키워드 텍스트 블록 기준으로 버튼 행을 정확히 세로 중앙에 오도록 강제 */
@@ -179,6 +199,7 @@ st.markdown(f"""
     /* 묶음 카드의 순서(▲▼)/수정/삭제 버튼: 컴팩트한 크기 + 역할별 색상 구분 */
     div[class*="st-key-up_"] button,
     div[class*="st-key-down_"] button,
+    div[class*="st-key-toggle_"] button,
     div[class*="st-key-edit_"] button,
     div[class*="st-key-delete_"] button,
     div[class*="st-key-save_"] button,
@@ -186,26 +207,37 @@ st.markdown(f"""
         display: inline-block !important;
         width: auto !important;
         margin: 0 !important;
-        padding: 0.3rem 0.9rem !important;
-        font-size: 12.5px !important;
+        padding: 0.2rem 0.65rem !important;
+        font-size: 11.5px !important;
         border-radius: 6px !important;
         box-shadow: none !important;
     }}
     div[class*="st-key-up_"] button,
-    div[class*="st-key-down_"] button {{
-        background-color: #475569 !important;
-        border: none !important;
-        width: 30px !important;
-        height: 30px !important;
-        min-width: 30px !important;
-        min-height: 30px !important;
+    div[class*="st-key-down_"] button,
+    div[class*="st-key-toggle_"] button {{
+        width: 25px !important;
+        height: 25px !important;
+        min-width: 25px !important;
+        min-height: 25px !important;
         padding: 0 !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
     }}
+    div[class*="st-key-up_"] button [data-testid="stIconMaterial"],
+    div[class*="st-key-down_"] button [data-testid="stIconMaterial"],
+    div[class*="st-key-toggle_"] button [data-testid="stIconMaterial"] {{
+        font-size: 15px !important;
+    }}
+    div[class*="st-key-up_"] button,
+    div[class*="st-key-down_"] button {{
+        background-color: #475569 !important;
+        border: none !important;
+    }}
     div[class*="st-key-up_"] button p,
-    div[class*="st-key-down_"] button p {{
+    div[class*="st-key-down_"] button p,
+    div[class*="st-key-up_"] button span,
+    div[class*="st-key-down_"] button span {{
         color: #FFFFFF !important;
         font-weight: 600 !important;
     }}
@@ -213,7 +245,17 @@ st.markdown(f"""
         background-color: #FFFFFF !important;
         border: 1px solid #CBD5E1 !important;
     }}
+    div[class*="st-key-toggle_"] button {{
+        background-color: #FFFFFF !important;
+        border: 1px solid #CBD5E1 !important;
+        border-radius: 50% !important;
+    }}
     div[class*="st-key-edit_"] button p {{
+        color: #475569 !important;
+        font-weight: 600 !important;
+    }}
+    div[class*="st-key-toggle_"] button p,
+    div[class*="st-key-toggle_"] button span {{
         color: #475569 !important;
         font-weight: 600 !important;
     }}

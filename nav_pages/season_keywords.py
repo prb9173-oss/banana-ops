@@ -109,222 +109,243 @@ if supabase_error:
 
 
 # ==========================================
-# [묶음 추가]
+# [매장 + 묶음 선택]
 # ==========================================
-st.markdown("#### 📝 시즌 키워드 묶음 추가")
+with st.container(border=True, key="section_store_mgmt"):
+    st.markdown("#### 🏪 매장별 시즌 키워드 관리")
 
-with st.form("add_bundle_form", clear_on_submit=True):
-    bundle_name = st.text_input("묶음 이름", placeholder="예: 봄 시즌")
-    bundle_keywords_raw = st.text_area(
-        "키워드 (한 줄에 하나씩 입력)",
-        placeholder="벚꽃 맛집\n봄나들이 코스\n봄 데이트 코스",
-        height=120,
-    )
-    submitted = st.form_submit_button("묶음 추가")
+    stores = fetch_stores()
 
-    if submitted:
-        keywords = [kw.strip() for kw in bundle_keywords_raw.splitlines() if kw.strip()]
-        if not bundle_name.strip():
-            st.warning("묶음 이름을 입력해 주세요.")
-        elif not keywords:
-            st.warning("키워드를 최소 1개 이상 입력해 주세요.")
+    if not stores:
+        st.warning("등록된 매장이 없습니다. `store_campaigns` 테이블에 매장을 먼저 등록해 주세요.")
+    elif not bundles:
+        st.warning("적용할 시즌 키워드 묶음이 없습니다. 아래에서 새 묶음을 먼저 추가해 주세요.")
+    else:
+        store_options = {s["store_name"]: s for s in stores}
+
+        col_store, col_bundle = st.columns(2)
+        with col_store:
+            selected_store = st.selectbox("매장 선택", options=list(store_options.keys()))
+        with col_bundle:
+            bundle_options = {b["id"]: b["name"] for b in bundles}
+            selected_bundle_id = st.selectbox(
+                "키워드 묶음 선택",
+                options=list(bundle_options.keys()),
+                format_func=lambda x: bundle_options[x],
+            )
+
+        selected_bundle = next(b for b in bundles if b["id"] == selected_bundle_id)
+        selected_store_row = store_options[selected_store]
+
+        st.caption(
+            f"연결된 계정: {selected_store_row['naver_account_key']} · "
+            f"캠페인: {selected_store_row['campaign_id']} · "
+            f"광고그룹: {selected_store_row['adgroup_id']}"
+        )
+
+        naver_acct = st.secrets[selected_store_row["naver_account_key"]]
+
+        try:
+            live_keywords = fetch_adgroup_keywords_live(
+                naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
+                selected_store_row["adgroup_id"],
+            )
+            live_error = None
+        except Exception as e:
+            live_keywords = []
+            live_error = str(e)
+
+        if live_error:
+            st.error(f"❌ 네이버 계정에서 현재 키워드 상태를 가져오는 데 실패했습니다: {live_error}")
         else:
-            next_order = max([b.get("display_order") or 0 for b in bundles], default=0) + 1
-            get_supabase_client().table("season_keyword_bundles").insert({
-                "name": bundle_name.strip(),
-                "keywords": keywords,
-                "display_order": next_order,
-            }).execute()
-            st.success(f"'{bundle_name.strip()}' 묶음이 추가되었습니다.")
-            st.rerun()
+            live_by_text = {k["keyword"]: k for k in live_keywords}
 
-st.markdown("---")
+            status_rows_html = []
+            for kw in selected_bundle["keywords"]:
+                if kw in live_by_text:
+                    is_on = not live_by_text[kw]["userLock"]
+                    pill_class, pill_label = ("pill-kw-on", "ON") if is_on else ("pill-kw-off", "OFF")
+                else:
+                    pill_class, pill_label = "pill-kw-new", "신규"
+                status_rows_html.append(
+                    f'<div class="kw-status-row"><span>{kw}</span>'
+                    f'<span class="status-pill {pill_class}">{pill_label}</span></div>'
+                )
+
+            st.markdown(f"**{selected_store}** 매장 · **'{selected_bundle['name']}'** 묶음 현재 상태 (실시간):")
+            st.markdown(
+                '<div class="feature-card kw-status-card">' + "".join(status_rows_html) + "</div>",
+                unsafe_allow_html=True,
+            )
+
+            confirm_key = f"confirm_action_{selected_store_row['id']}_{selected_bundle_id}"
+
+            with st.container(key="onoff_actions"):
+                if st.button("키워드 On", key="btn_turn_on"):
+                    st.session_state[confirm_key] = "on"
+                if st.button("키워드 Off", key="btn_turn_off"):
+                    st.session_state[confirm_key] = "off"
+
+            pending = st.session_state.get(confirm_key)
+            if pending:
+                action_label = "켜기" if pending == "on" else "끄기"
+                with st.container(key="confirm_panel"):
+                    st.markdown(
+                        f'<div class="confirm-text">정말 <b>{selected_store}</b> 매장에 '
+                        f"'<b>{selected_bundle['name']}</b>' 묶음을 <b>{action_label}</b> 하시겠습니까?"
+                        f'<div class="confirm-subtext">실제 네이버 광고 계정(파워링크)에 바로 반영됩니다.</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                    col_yes, col_no = st.columns(2)
+                    with col_yes:
+                        if st.button("예", key="confirm_yes"):
+                            try:
+                                if pending == "on":
+                                    to_create = [kw for kw in selected_bundle["keywords"] if kw not in live_by_text]
+                                    to_unlock = [
+                                        live_by_text[kw] for kw in selected_bundle["keywords"]
+                                        if kw in live_by_text and live_by_text[kw]["userLock"]
+                                    ]
+                                    if to_create:
+                                        create_keywords_live(
+                                            naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
+                                            selected_store_row["adgroup_id"], to_create,
+                                        )
+                                    if to_unlock:
+                                        set_keywords_lock_live(
+                                            naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
+                                            to_unlock, lock=False,
+                                        )
+                                    st.success(f"✅ {len(to_create)}개 신규 추가, {len(to_unlock)}개 ON 처리했습니다.")
+                                else:
+                                    to_lock = [
+                                        live_by_text[kw] for kw in selected_bundle["keywords"]
+                                        if kw in live_by_text and not live_by_text[kw]["userLock"]
+                                    ]
+                                    if to_lock:
+                                        set_keywords_lock_live(
+                                            naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
+                                            to_lock, lock=True,
+                                        )
+                                    st.success(f"✅ {len(to_lock)}개 OFF 처리했습니다.")
+                                st.session_state[confirm_key] = None
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ 적용 중 오류가 발생했습니다: {e}")
+                    with col_no:
+                        if st.button("아니오", key="confirm_no"):
+                            st.session_state[confirm_key] = None
+                            st.rerun()
+
+
+# ==========================================
+# [묶음 추가]
+with st.container(border=True, key="section_add_bundle"):
+    st.markdown("#### 📝 시즌 키워드 묶음 추가")
+
+    with st.form("add_bundle_form", clear_on_submit=True):
+        bundle_name = st.text_input("묶음 이름", placeholder="예: 봄 시즌")
+        bundle_keywords_raw = st.text_area(
+            "키워드 (한 줄에 하나씩 입력)",
+            placeholder="벚꽃 맛집\n봄나들이 코스\n봄 데이트 코스",
+            height=120,
+        )
+        submitted = st.form_submit_button("묶음 추가")
+
+        if submitted:
+            keywords = [kw.strip() for kw in bundle_keywords_raw.splitlines() if kw.strip()]
+            if not bundle_name.strip():
+                st.warning("묶음 이름을 입력해 주세요.")
+            elif not keywords:
+                st.warning("키워드를 최소 1개 이상 입력해 주세요.")
+            else:
+                next_order = max([b.get("display_order") or 0 for b in bundles], default=0) + 1
+                get_supabase_client().table("season_keyword_bundles").insert({
+                    "name": bundle_name.strip(),
+                    "keywords": keywords,
+                    "display_order": next_order,
+                }).execute()
+                st.success(f"'{bundle_name.strip()}' 묶음이 추가되었습니다.")
+                st.rerun()
 
 
 # ==========================================
 # [묶음 목록 / 삭제]
-# ==========================================
-st.markdown("#### 📚 저장된 시즌 키워드 묶음")
-
-if not bundles:
-    st.info("아직 저장된 시즌 키워드 묶음이 없습니다. 위에서 먼저 추가해 주세요.")
-else:
-    for idx, bundle in enumerate(bundles):
-        with st.container(border=True, key=f"bundle_card_{bundle['id']}"):
-            col_info, col_actions = st.columns([5, 3], vertical_alignment="center")
-            with col_info:
-                st.markdown(f"**{bundle['name']}** · 키워드 {len(bundle['keywords'])}개")
-                st.markdown(
-                    f'<div class="kw-text">{", ".join(bundle["keywords"])}</div>',
-                    unsafe_allow_html=True,
-                )
-            with col_actions:
-                with st.container(key=f"actions_{bundle['id']}"):
-                    if st.button("▲", key=f"up_{bundle['id']}", disabled=(idx == 0)):
-                        swap_bundle_order(bundle, bundles[idx - 1])
-                        st.rerun()
-                    if st.button("▼", key=f"down_{bundle['id']}", disabled=(idx == len(bundles) - 1)):
-                        swap_bundle_order(bundle, bundles[idx + 1])
-                        st.rerun()
-                    if st.button("수정", key=f"edit_{bundle['id']}"):
-                        st.session_state[f"editing_{bundle['id']}"] = not st.session_state.get(f"editing_{bundle['id']}", False)
-                    if st.button("삭제", key=f"delete_{bundle['id']}"):
-                        get_supabase_client().table("season_keyword_bundles").delete().eq("id", bundle["id"]).execute()
-                        st.rerun()
-
-            if st.session_state.get(f"editing_{bundle['id']}", False):
-                with st.container(key=f"edit_panel_{bundle['id']}"):
-                    st.markdown('<div class="edit-panel-label">✏️ 키워드 수정 (쉼표로 구분)</div>', unsafe_allow_html=True)
-                    edited_kw_raw = st.text_area(
-                        "키워드 (쉼표로 구분)",
-                        value=", ".join(bundle["keywords"]),
-                        key=f"edit_kw_{bundle['id']}",
-                        height=100,
-                        label_visibility="collapsed",
-                    )
-                    with st.container(key=f"editform_actions_{bundle['id']}"):
-                        if st.button("저장", key=f"save_{bundle['id']}"):
-                            new_kws = [kw.strip() for kw in edited_kw_raw.split(",") if kw.strip()]
-                            if not new_kws:
-                                st.warning("키워드를 최소 1개 이상 남겨주세요.")
-                            else:
-                                deduped = list(dict.fromkeys(new_kws))
-                                get_supabase_client().table("season_keyword_bundles").update(
-                                    {"keywords": deduped}
-                                ).eq("id", bundle["id"]).execute()
-                                st.session_state[f"editing_{bundle['id']}"] = False
-                                st.rerun()
-                        if st.button("취소", key=f"cancel_{bundle['id']}"):
-                            st.session_state[f"editing_{bundle['id']}"] = False
-                            st.rerun()
-
-st.markdown("###")
-
-
-# ==========================================
-# [매장 + 묶음 선택]
-# ==========================================
-st.markdown("#### 🏪 매장별 시즌 키워드 관리")
-
-stores = fetch_stores()
-
-if not stores:
-    st.warning("등록된 매장이 없습니다. `store_campaigns` 테이블에 매장을 먼저 등록해 주세요.")
-elif not bundles:
-    st.warning("적용할 시즌 키워드 묶음이 없습니다. 위에서 먼저 추가해 주세요.")
-else:
-    store_options = {s["store_name"]: s for s in stores}
-
-    col_store, col_bundle = st.columns(2)
-    with col_store:
-        selected_store = st.selectbox("매장 선택", options=list(store_options.keys()))
-    with col_bundle:
-        bundle_options = {b["id"]: b["name"] for b in bundles}
-        selected_bundle_id = st.selectbox(
-            "키워드 묶음 선택",
-            options=list(bundle_options.keys()),
-            format_func=lambda x: bundle_options[x],
+with st.container(border=True, key="section_bundle_list"):
+    col_title, col_search = st.columns([3, 2], vertical_alignment="center")
+    with col_title:
+        st.markdown("#### 📚 저장된 시즌 키워드 묶음")
+    with col_search:
+        search_term = st.text_input(
+            "묶음 검색",
+            placeholder="🔍 묶음 이름 검색",
+            key="bundle_search",
+            label_visibility="collapsed",
         )
 
-    selected_bundle = next(b for b in bundles if b["id"] == selected_bundle_id)
-    selected_store_row = store_options[selected_store]
-
-    st.caption(
-        f"연결된 계정: {selected_store_row['naver_account_key']} · "
-        f"캠페인: {selected_store_row['campaign_id']} · "
-        f"광고그룹: {selected_store_row['adgroup_id']}"
+    filtered_bundles = (
+        [b for b in bundles if search_term.strip().lower() in b["name"].lower()]
+        if search_term.strip() else bundles
     )
 
-    naver_acct = st.secrets[selected_store_row["naver_account_key"]]
-
-    try:
-        live_keywords = fetch_adgroup_keywords_live(
-            naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
-            selected_store_row["adgroup_id"],
-        )
-        live_error = None
-    except Exception as e:
-        live_keywords = []
-        live_error = str(e)
-
-    if live_error:
-        st.error(f"❌ 네이버 계정에서 현재 키워드 상태를 가져오는 데 실패했습니다: {live_error}")
+    if not bundles:
+        st.info("아직 저장된 시즌 키워드 묶음이 없습니다. 위에서 먼저 추가해 주세요.")
+    elif not filtered_bundles:
+        st.info(f"'{search_term.strip()}'와(과) 일치하는 묶음이 없습니다.")
     else:
-        live_by_text = {k["keyword"]: k for k in live_keywords}
-
-        status_rows_html = []
-        for kw in selected_bundle["keywords"]:
-            if kw in live_by_text:
-                is_on = not live_by_text[kw]["userLock"]
-                pill_class, pill_label = ("pill-kw-on", "ON") if is_on else ("pill-kw-off", "OFF")
-            else:
-                pill_class, pill_label = "pill-kw-new", "신규"
-            status_rows_html.append(
-                f'<div class="kw-status-row"><span>{kw}</span>'
-                f'<span class="status-pill {pill_class}">{pill_label}</span></div>'
-            )
-
-        st.markdown(f"**{selected_store}** 매장 · **'{selected_bundle['name']}'** 묶음 현재 상태 (실시간):")
-        st.markdown(
-            '<div class="feature-card kw-status-card">' + "".join(status_rows_html) + "</div>",
-            unsafe_allow_html=True,
-        )
-
-        confirm_key = f"confirm_action_{selected_store_row['id']}_{selected_bundle_id}"
-
-        with st.container(key="onoff_actions"):
-            if st.button("키워드 On", key="btn_turn_on"):
-                st.session_state[confirm_key] = "on"
-            if st.button("키워드 Off", key="btn_turn_off"):
-                st.session_state[confirm_key] = "off"
-
-        pending = st.session_state.get(confirm_key)
-        if pending:
-            action_label = "켜기" if pending == "on" else "끄기"
-            with st.container(key="confirm_panel"):
-                st.markdown(
-                    f'<div class="confirm-text">정말 <b>{selected_store}</b> 매장에 '
-                    f"'<b>{selected_bundle['name']}</b>' 묶음을 <b>{action_label}</b> 하시겠습니까?"
-                    f'<div class="confirm-subtext">실제 네이버 광고 계정(파워링크)에 바로 반영됩니다.</div></div>',
-                    unsafe_allow_html=True,
-                )
-                col_yes, col_no = st.columns(2)
-                with col_yes:
-                    if st.button("예", key="confirm_yes"):
-                        try:
-                            if pending == "on":
-                                to_create = [kw for kw in selected_bundle["keywords"] if kw not in live_by_text]
-                                to_unlock = [
-                                    live_by_text[kw] for kw in selected_bundle["keywords"]
-                                    if kw in live_by_text and live_by_text[kw]["userLock"]
-                                ]
-                                if to_create:
-                                    create_keywords_live(
-                                        naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
-                                        selected_store_row["adgroup_id"], to_create,
-                                    )
-                                if to_unlock:
-                                    set_keywords_lock_live(
-                                        naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
-                                        to_unlock, lock=False,
-                                    )
-                                st.success(f"✅ {len(to_create)}개 신규 추가, {len(to_unlock)}개 ON 처리했습니다.")
-                            else:
-                                to_lock = [
-                                    live_by_text[kw] for kw in selected_bundle["keywords"]
-                                    if kw in live_by_text and not live_by_text[kw]["userLock"]
-                                ]
-                                if to_lock:
-                                    set_keywords_lock_live(
-                                        naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
-                                        to_lock, lock=True,
-                                    )
-                                st.success(f"✅ {len(to_lock)}개 OFF 처리했습니다.")
-                            st.session_state[confirm_key] = None
+        for bundle in filtered_bundles:
+            idx = bundles.index(bundle)
+            is_expanded = st.session_state.get(f"expanded_{bundle['id']}", False)
+            card_state = "open" if is_expanded else "closed"
+            with st.container(border=True, key=f"bundle_card_{bundle['id']}_{card_state}"):
+                col_info, col_actions = st.columns([5, 3], vertical_alignment="center")
+                with col_info:
+                    st.markdown(f"**{bundle['name']}** · 키워드 {len(bundle['keywords'])}개")
+                    if is_expanded:
+                        st.markdown(
+                            f'<div class="kw-text">{", ".join(bundle["keywords"])}</div>',
+                            unsafe_allow_html=True,
+                        )
+                with col_actions:
+                    with st.container(key=f"actions_{bundle['id']}"):
+                        if st.button(":material/arrow_upward:", key=f"up_{bundle['id']}", disabled=(idx == 0)):
+                            swap_bundle_order(bundle, bundles[idx - 1])
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ 적용 중 오류가 발생했습니다: {e}")
-                with col_no:
-                    if st.button("아니오", key="confirm_no"):
-                        st.session_state[confirm_key] = None
-                        st.rerun()
+                        if st.button(":material/arrow_downward:", key=f"down_{bundle['id']}", disabled=(idx == len(bundles) - 1)):
+                            swap_bundle_order(bundle, bundles[idx + 1])
+                            st.rerun()
+                        if st.button("수정", key=f"edit_{bundle['id']}"):
+                            st.session_state[f"editing_{bundle['id']}"] = not st.session_state.get(f"editing_{bundle['id']}", False)
+                        if st.button("삭제", key=f"delete_{bundle['id']}"):
+                            get_supabase_client().table("season_keyword_bundles").delete().eq("id", bundle["id"]).execute()
+                            st.rerun()
+                        toggle_icon = ":material/expand_less:" if is_expanded else ":material/expand_more:"
+                        if st.button(toggle_icon, key=f"toggle_{bundle['id']}"):
+                            st.session_state[f"expanded_{bundle['id']}"] = not is_expanded
+                            st.rerun()
+
+                if st.session_state.get(f"editing_{bundle['id']}", False):
+                    with st.container(key=f"edit_panel_{bundle['id']}"):
+                        st.markdown('<div class="edit-panel-label">✏️ 키워드 수정 (쉼표로 구분)</div>', unsafe_allow_html=True)
+                        edited_kw_raw = st.text_area(
+                            "키워드 (쉼표로 구분)",
+                            value=", ".join(bundle["keywords"]),
+                            key=f"edit_kw_{bundle['id']}",
+                            height=100,
+                            label_visibility="collapsed",
+                        )
+                        with st.container(key=f"editform_actions_{bundle['id']}"):
+                            if st.button("저장", key=f"save_{bundle['id']}"):
+                                new_kws = [kw.strip() for kw in edited_kw_raw.split(",") if kw.strip()]
+                                if not new_kws:
+                                    st.warning("키워드를 최소 1개 이상 남겨주세요.")
+                                else:
+                                    deduped = list(dict.fromkeys(new_kws))
+                                    get_supabase_client().table("season_keyword_bundles").update(
+                                        {"keywords": deduped}
+                                    ).eq("id", bundle["id"]).execute()
+                                    st.session_state[f"editing_{bundle['id']}"] = False
+                                    st.rerun()
+                            if st.button("취소", key=f"cancel_{bundle['id']}"):
+                                st.session_state[f"editing_{bundle['id']}"] = False
+                                st.rerun()
