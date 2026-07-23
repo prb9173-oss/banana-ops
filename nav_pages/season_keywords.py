@@ -75,7 +75,7 @@ if not bundles:
     st.info("아직 저장된 시즌 키워드 묶음이 없습니다. 위에서 먼저 추가해 주세요.")
 else:
     for bundle in bundles:
-        with st.container():
+        with st.container(border=True):
             col_info, col_delete = st.columns([5, 1])
             with col_info:
                 st.markdown(f"**{bundle['name']}** · 키워드 {len(bundle['keywords'])}개")
@@ -84,7 +84,7 @@ else:
                 if st.button("삭제", key=f"delete_{bundle['id']}"):
                     get_supabase_client().table("season_keyword_bundles").delete().eq("id", bundle["id"]).execute()
                     st.rerun()
-            st.markdown("<hr style='margin:8px 0; opacity:0.3;'>", unsafe_allow_html=True)
+        st.markdown("###")
 
 st.markdown("###")
 
