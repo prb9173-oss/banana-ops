@@ -394,7 +394,7 @@ st.markdown(f"""
 
 pages = [
     st.Page("nav_pages/data_extractor.py", title="광고 데이터 추출기", icon=":material/monitoring:", default=True),
-    st.Page("nav_pages/season_keywords.py", title="시즌 키워드 운용", icon=":material/eco:"),
+    st.Page("nav_pages/season_keywords.py", title="시즌 키워드 관리", icon=":material/eco:"),
     st.Page("nav_pages/creative_viz.py", title="광고 소재 · 시각화", icon=":material/dashboard:"),
     st.Page("nav_pages/place_rank.py", title="플레이스 순위 추적", icon=":material/location_on:"),
     st.Page("nav_pages/meeting_docs.py", title="회의 자료 수집", icon=":material/folder_shared:"),

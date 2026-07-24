@@ -12,6 +12,11 @@ REQUEST_TIMEOUT = 10
 def _safe_get(url, headers, params=None):
     try:
         return requests.get(url, params=params, headers=headers, timeout=REQUEST_TIMEOUT), None
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+        return None, (
+            "일시적인 네트워크 문제로 보입니다. 잠시 후 다시 시도하거나, "
+            "계속되면 앱을 재시작(Reboot)해 보세요."
+        )
     except requests.exceptions.RequestException as e:
         return None, str(e)
 

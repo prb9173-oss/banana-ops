@@ -195,7 +195,3 @@ with st.container(border=True, key="section_rank_results"):
                             "id", kw["id"]
                         ).execute()
                         st.rerun()
-    st.caption(
-        "⚠️ 순위 체크는 GitHub Actions에서 수동 실행으로만 동작합니다 — "
-        "매일 자동 실행(스케줄)은 아직 켜지 않은 상태입니다."
-    )

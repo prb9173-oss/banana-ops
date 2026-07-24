@@ -93,8 +93,7 @@ def fetch_stores():
     return res.data or []
 
 
-st.subheader("시즌 키워드 운용 고도화")
-st.caption("시즌별 키워드 묶음을 저장해두고, 매장에 적용할 준비를 합니다.")
+st.subheader("시즌 키워드 관리")
 
 try:
     bundles = fetch_bundles()
@@ -151,6 +150,12 @@ with st.container(border=True, key="section_store_mgmt"):
                 selected_store_row["adgroup_id"],
             )
             live_error = None
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            live_keywords = []
+            live_error = (
+                "일시적인 네트워크 문제로 보입니다. 잠시 후 다시 시도하거나, "
+                "계속되면 앱을 재시작(Reboot)해 보세요."
+            )
         except Exception as e:
             live_keywords = []
             live_error = str(e)
