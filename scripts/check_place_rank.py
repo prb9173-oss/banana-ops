@@ -204,25 +204,27 @@ def main():
     rows = fetch_active_keyword_rows(client)
     logging.info("추적할 키워드 %d개", len(rows))
 
-    driver = build_driver()
-    try:
-        for row in rows:
-            store = row.get("store_campaigns") or {}
-            target_place_id = store.get("naver_place_id")
-            target_name = store.get("naver_place_name") or store.get("store_name")
-            keyword = row["keyword"]
+    for row in rows:
+        store = row.get("store_campaigns") or {}
+        target_place_id = store.get("naver_place_id")
+        target_name = store.get("naver_place_name") or store.get("store_name")
+        keyword = row["keyword"]
 
-            try:
-                result = check_place_rank(driver, keyword, target_place_id, target_name)
-                logging.info("keyword_id=%s '%s' -> %s", row["id"], keyword, result)
-            except Exception as e:
-                logging.exception("keyword_id=%s '%s' 체크 실패", row["id"], keyword)
-                result = {"rank": None, "results_scanned": None, "status": "error", "error_message": str(e)}
+        # 키워드마다 브라우저를 완전히 새로 띄운다. 하나의 세션으로 여러 키워드를
+        # 연달아 조회하면, 같은 세션에서 두 번째 이후 요청이 유독 잘 걸리는
+        # 패턴이 실측으로 확인돼서 (2026-07-24), 매번 "첫 요청"처럼 보이게 한다.
+        driver = build_driver()
+        try:
+            result = check_place_rank(driver, keyword, target_place_id, target_name)
+            logging.info("keyword_id=%s '%s' -> %s", row["id"], keyword, result)
+        except Exception as e:
+            logging.exception("keyword_id=%s '%s' 체크 실패", row["id"], keyword)
+            result = {"rank": None, "results_scanned": None, "status": "error", "error_message": str(e)}
+        finally:
+            driver.quit()
 
-            record_result(client, row["id"], result)
-            time.sleep(3)
-    finally:
-        driver.quit()
+        record_result(client, row["id"], result)
+        time.sleep(3)
 
 
 if __name__ == "__main__":
