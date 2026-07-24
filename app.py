@@ -209,14 +209,23 @@ st.markdown(f"""
     div[class*="st-key-bundle_card_"][class*="_open"] {{
         padding-bottom: 26px !important;
     }}
-    /* 플레이스 순위 키워드 카드: 시즌 키워드 묶음 카드와 동일한 시각 언어 재사용 */
-    div[class*="st-key-pr_kwcard_"] {{
+    /* 플레이스 순위 키워드 그룹 카드: 시즌 키워드 묶음 카드와 동일한 시각 언어 재사용.
+       같은 키워드를 여러 매장에 등록해두면 카드 하나에 지점별 행이 여러 개 쌓인다. */
+    div[class*="st-key-pr_kwgroup_"] {{
         background-color: #FFFFFF;
         padding-bottom: 14px !important;
         margin-bottom: 8px !important;
     }}
-    div[class*="st-key-pr_kwcard_"] div[data-testid="stHorizontalBlock"] {{
+    div[class*="st-key-pr_kwgroup_"] div[data-testid="stHorizontalBlock"] {{
         align-items: center !important;
+    }}
+    /* 한 그룹 카드 안에서 지점별 행을 구분선으로 분리 */
+    div[class*="st-key-pr_kwrow_"] {{
+        padding: 8px 0 !important;
+        border-bottom: 1px solid #EEF0F3;
+    }}
+    div[class*="st-key-pr_kwrow_"]:last-of-type {{
+        border-bottom: none;
     }}
     /* vertical_alignment="center"가 실제로는 stretch로 렌더링되는 문제 보정:
        제목+줄바꿈된 키워드 텍스트 블록 기준으로 버튼 행을 정확히 세로 중앙에 오도록 강제 */

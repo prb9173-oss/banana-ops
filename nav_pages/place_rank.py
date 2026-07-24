@@ -19,12 +19,12 @@ def fetch_stores():
     return res.data or []
 
 
-def fetch_keywords_for_store(store_id):
+def fetch_all_keywords():
     client = get_supabase_client()
     res = (
         client.table("place_rank_keywords")
-        .select("*")
-        .eq("store_id", store_id)
+        .select("*, store_campaigns(store_name, naver_place_id, naver_place_name)")
+        .eq("is_active", True)
         .order("display_order")
         .execute()
     )
@@ -48,6 +48,21 @@ def fetch_all_checks(keyword_ids):
     return by_keyword
 
 
+def group_by_keyword(keyword_rows):
+    """키워드 텍스트가 같은 행들을 묶는다 — 같은 키워드를 여러 매장(지점)에
+    등록해두면 실무 보고서처럼 한 줄에 지점별 순위를 나란히 볼 수 있게 하기 위함.
+    최초 등장 순서를 그대로 유지한다."""
+    groups = {}
+    order = []
+    for row in keyword_rows:
+        kw = row["keyword"]
+        if kw not in groups:
+            groups[kw] = []
+            order.append(kw)
+        groups[kw].append(row)
+    return [(kw, groups[kw]) for kw in order]
+
+
 def format_checked_at(checked_at):
     """서버가 어느 타임존에서 돌든(Streamlit Cloud는 UTC) 항상 한국 시간 기준으로
     보이도록 시스템 로컬 타임존(astimezone())이 아니라 Asia/Seoul로 명시 변환한다."""
@@ -69,11 +84,10 @@ def find_check_for_date(checks, target_date):
     return None
 
 
-def build_rank_info_html(keyword_row, selected_check, previous_check):
-    keyword = keyword_row["keyword"]
+def build_rank_info_html(store_name, keyword_row, selected_check, previous_check):
     is_active = keyword_row.get("is_active", True)
 
-    name_bits = f'<span class="rank-kw">{keyword}</span>'
+    name_bits = f'<span class="rank-kw">{store_name}</span>'
     if not is_active:
         name_bits += ' <span class="status-pill pill-rank-unknown">추적 중지됨</span>'
         return f'<div>{name_bits}</div>'
@@ -108,7 +122,7 @@ def build_rank_info_html(keyword_row, selected_check, previous_check):
 
 
 st.subheader("플레이스 순위 추적")
-st.caption("매장별 타겟 키워드의 네이버 플레이스 검색 순위를 매일 체크하고 전일 대비 변동을 확인합니다.")
+st.caption("매장별 타겟 키워드의 네이버 플레이스 검색 순위를 매일 체크하고 전일/전주 대비 변동을 확인합니다.")
 
 try:
     stores = fetch_stores()
@@ -121,7 +135,7 @@ if supabase_error:
     st.error(f"❌ Supabase 연결 중 오류가 발생했습니다: {supabase_error}")
     st.stop()
 
-st.sidebar.markdown("### 🏪 매장 선택")
+st.sidebar.markdown("### 🏪 키워드 추가할 매장")
 
 if not stores:
     st.sidebar.warning("등록된 매장이 없습니다.")
@@ -130,7 +144,7 @@ if not stores:
 
 store_options = {s["store_name"]: s for s in stores}
 selected_store = st.sidebar.selectbox(
-    "순위를 추적할 매장을 선택해 주세요.", options=list(store_options.keys()), key="pr_selected_store"
+    "새 키워드를 등록할 매장을 선택해 주세요.", options=list(store_options.keys()), key="pr_selected_store"
 )
 selected_store_row = store_options[selected_store]
 
@@ -142,11 +156,11 @@ else:
         "Supabase `store_campaigns` 테이블에서 `naver_place_id`를 입력해 주세요."
     )
 
-keywords = fetch_keywords_for_store(selected_store_row["id"])
-checks_by_keyword = fetch_all_checks([k["id"] for k in keywords])
+all_keywords = fetch_all_keywords()
+checks_by_keyword = fetch_all_checks([k["id"] for k in all_keywords])
 
 with st.container(border=True, key="section_add_keyword"):
-    st.markdown("#### 📝 추적 키워드 추가")
+    st.markdown(f"#### 📝 추적 키워드 추가 — {selected_store}")
     with st.form("add_place_keyword_form", clear_on_submit=True):
         new_keyword = st.text_input("키워드", placeholder="예: 중문 흑돼지")
         submitted = st.form_submit_button("키워드 추가")
@@ -155,43 +169,56 @@ with st.container(border=True, key="section_add_keyword"):
             if not new_keyword.strip():
                 st.warning("키워드를 입력해 주세요.")
             else:
-                next_order = max([k.get("display_order") or 0 for k in keywords], default=0) + 1
+                same_store_keywords = [
+                    k for k in all_keywords if k["store_id"] == selected_store_row["id"]
+                ]
+                next_order = max([k.get("display_order") or 0 for k in same_store_keywords], default=0) + 1
                 try:
                     get_supabase_client().table("place_rank_keywords").insert({
                         "store_id": selected_store_row["id"],
                         "keyword": new_keyword.strip(),
                         "display_order": next_order,
                     }).execute()
-                    st.success(f"'{new_keyword.strip()}' 키워드가 추가되었습니다.")
+                    st.success(f"'{selected_store}'에 '{new_keyword.strip()}' 키워드가 추가되었습니다.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ 키워드 추가 중 오류가 발생했습니다: {e}")
 
 with st.container(border=True, key="section_rank_results"):
-    st.markdown(f"#### 📍 {selected_store} · 순위 현황")
-    if not keywords:
+    st.markdown("#### 📍 전체 순위 현황")
+    if not all_keywords:
         st.info("추적 중인 타겟 키워드가 없습니다. 위에서 키워드를 추가해 주세요.")
     else:
-        selected_date = st.date_input(
-            "조회할 날짜", value=datetime.now(KST).date(), key="pr_selected_date"
-        )
-        previous_date = selected_date - timedelta(days=1)
+        col_date, col_basis = st.columns([2, 2])
+        with col_date:
+            selected_date = st.date_input(
+                "조회할 날짜", value=datetime.now(KST).date(), key="pr_selected_date"
+            )
+        with col_basis:
+            compare_basis = st.radio(
+                "비교 기준", ["전날 대비", "일주일 전 대비"], horizontal=True, key="pr_compare_basis"
+            )
+        previous_date = selected_date - timedelta(days=1 if compare_basis == "전날 대비" else 7)
 
-        for kw in keywords:
-            checks = checks_by_keyword.get(kw["id"], [])
-            selected_check = find_check_for_date(checks, selected_date)
-            previous_check = find_check_for_date(checks, previous_date)
+        for group_idx, (keyword_text, rows) in enumerate(group_by_keyword(all_keywords)):
+            with st.container(border=True, key=f"pr_kwgroup_{group_idx}"):
+                st.markdown(f"**{keyword_text}**")
+                for kw in rows:
+                    store_name = (kw.get("store_campaigns") or {}).get("store_name", "")
+                    checks = checks_by_keyword.get(kw["id"], [])
+                    selected_check = find_check_for_date(checks, selected_date)
+                    previous_check = find_check_for_date(checks, previous_date)
 
-            with st.container(border=True, key=f"pr_kwcard_{kw['id']}"):
-                col_info, col_delete = st.columns([7, 1], vertical_alignment="center")
-                with col_info:
-                    st.markdown(
-                        build_rank_info_html(kw, selected_check, previous_check),
-                        unsafe_allow_html=True,
-                    )
-                with col_delete:
-                    if st.button("-", key=f"kwdel_{kw['id']}"):
-                        get_supabase_client().table("place_rank_keywords").delete().eq(
-                            "id", kw["id"]
-                        ).execute()
-                        st.rerun()
+                    with st.container(key=f"pr_kwrow_{kw['id']}"):
+                        col_info, col_delete = st.columns([7, 1], vertical_alignment="center")
+                        with col_info:
+                            st.markdown(
+                                build_rank_info_html(store_name, kw, selected_check, previous_check),
+                                unsafe_allow_html=True,
+                            )
+                        with col_delete:
+                            if st.button("-", key=f"kwdel_{kw['id']}"):
+                                get_supabase_client().table("place_rank_keywords").delete().eq(
+                                    "id", kw["id"]
+                                ).execute()
+                                st.rerun()
