@@ -1,11 +1,12 @@
 name: Place Rank Check
 
 on:
-  # 매일 한국시간 09:00(UTC 00:00)에 자동 실행. 수동 실행도 그대로 남겨둔다.
+  # 임시로 09:45 KST(UTC 00:45)로 맞춰서 스케줄 트리거가 실제로 도는지 테스트 중.
+  # 확인되면 원래 목표 시각인 09:00 KST(UTC 00:00)로 되돌릴 것.
   # 참고: GitHub Actions의 schedule은 "정확히 그 시각"을 보장하지 않고
   # 몇 분(드물게 그 이상) 늦게 시작될 수 있다.
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "45 0 * * *"
   workflow_dispatch: {}
 
 jobs:
