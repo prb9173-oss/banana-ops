@@ -1,12 +1,10 @@
 name: Place Rank Check
 
 on:
-  # 임시로 11:00 KST(UTC 02:00)로 맞춰서 스케줄 트리거가 실제로 도는지 테스트 중.
-  # 확인되면 원래 목표 시각인 09:00 KST(UTC 00:00)로 되돌릴 것.
-  # 참고: GitHub Actions의 schedule은 "정확히 그 시각"을 보장하지 않고
-  # 몇 분(드물게 그 이상) 늦게 시작될 수 있다.
-  schedule:
-    - cron: "0 2 * * *"
+  # 매일 자동 실행은 GitHub 자체 schedule 대신 외부 서비스(cron-job.org)가
+  # 이 워크플로우의 workflow_dispatch를 API로 호출하는 방식으로 처리한다.
+  # GitHub의 schedule 트리거는 최대 3시간 넘게 지연되는 등 신뢰할 수 없어서
+  # (2026-07-24 실측) 아예 빼뒀다 — 여기 다시 추가하지 말 것.
   workflow_dispatch: {}
 
 jobs:
