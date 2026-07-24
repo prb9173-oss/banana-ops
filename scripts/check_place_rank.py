@@ -10,6 +10,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.common.exceptions import TimeoutException
+from selenium_stealth import stealth
 from supabase import create_client
 
 SEARCH_URL = "https://m.search.naver.com/search.naver?where=m&sm=mtp_hty&query={query}"
@@ -21,6 +22,7 @@ MAX_ORGANIC_SCAN = 400
 MAX_SCROLLS = 60
 STABLE_SCROLLS_TO_STOP = 3
 PAGE_LOAD_WAIT = 20  # 고정 sleep 대신 요소가 실제로 나타날 때까지 최대 대기하는 시간(초)
+MAX_ATTEMPTS_PER_KEYWORD = 3  # 네이버 봇 탐지에 확률적으로 걸리는 경우를 감안한 재시도 횟수
 
 
 def get_supabase_client():
@@ -44,12 +46,26 @@ def fetch_active_keyword_rows(client):
 
 
 def build_driver():
+    """headless Chrome은 navigator.webdriver 등 자동화 흔적이 남아있어 네이버의
+    봇 탐지에 확률적으로 걸리기 쉽다. selenium-stealth로 그 흔적들을 지워서
+    걸릴 확률 자체를 낮춘다 (완전히 없애진 못하므로 재시도와 병행)."""
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--window-size=430,900")
     options.add_argument(f"user-agent={MOBILE_USER_AGENT}")
     options.add_argument("--lang=ko-KR")
-    return webdriver.Chrome(options=options)
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    driver = webdriver.Chrome(options=options)
+    stealth(
+        driver,
+        languages=["ko-KR", "ko"],
+        vendor="Google Inc.",
+        platform="Linux armv8l",
+        webgl_vendor="Qualcomm",
+        renderer="Adreno (TM) 730",
+        fix_hairline=True,
+    )
+    return driver
 
 
 def resolve_place_list_url(driver, keyword):
@@ -130,21 +146,25 @@ def load_list_page(driver, list_url):
         pass  # 아래에서 cards가 비어있으면 재시도/에러 처리
 
 
+def load_cards_with_retries(driver, list_url, max_attempts=MAX_ATTEMPTS_PER_KEYWORD):
+    """네이버 봇 탐지에 확률적으로 걸려 카드가 0개로 보일 때가 있어, 매번 새로
+    페이지를 열어서 최대 max_attempts번까지 시도한다. 그래도 0개면 "결과 없음"이
+    아니라 스크래핑 자체가 실패한 것으로 본다 (흔한 키워드에서 결과가 진짜
+    0개일 가능성은 거의 없음)."""
+    for attempt in range(1, max_attempts + 1):
+        load_list_page(driver, list_url)
+        cards = scroll_to_load_more(driver)
+        if cards:
+            return cards
+        logging.warning("카드 0개 (시도 %d/%d), 재시도", attempt, max_attempts)
+    raise RuntimeError("결과 목록을 로드하지 못함 (카드 0개)")
+
+
 def check_place_rank(driver, keyword, target_place_id, target_name):
     """조직 키워드에 대해 target_place_id(우선) 또는 target_name으로 매장을 찾아
     광고를 제외한 오가닉 순위를 계산한다. 반환값은 place_rank_checks insert용 dict."""
     list_url = resolve_place_list_url(driver, keyword)
-    load_list_page(driver, list_url)
-
-    cards = scroll_to_load_more(driver)
-    if not cards:
-        # 같은 페이지에서 더 기다리는 대신, 아예 새로 열어서 한 번 더 시도.
-        # 그래도 0개면 "결과 없음"이 아니라 스크래핑 자체가 실패한 것으로 본다
-        # (흔한 키워드에서 결과가 진짜 0개일 가능성은 거의 없음).
-        load_list_page(driver, list_url)
-        cards = scroll_to_load_more(driver)
-        if not cards:
-            raise RuntimeError("결과 목록을 로드하지 못함 (카드 0개)")
+    cards = load_cards_with_retries(driver, list_url)
 
     organic_rank = 0
     for card in cards:
