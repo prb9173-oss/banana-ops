@@ -113,7 +113,7 @@ def build_top10_html(top_places):
     return f' <span class="rank-top10">{names}</span>'
 
 
-def build_rank_info_html(store_name, keyword_row, selected_check, previous_check, top10_html=""):
+def build_rank_info_html(store_name, keyword_row, selected_check, previous_check):
     is_active = keyword_row.get("is_active", True)
 
     name_bits = f'<span class="rank-kw">{store_name}</span>'
@@ -123,7 +123,7 @@ def build_rank_info_html(store_name, keyword_row, selected_check, previous_check
 
     if not selected_check:
         name_bits += ' <span class="status-pill pill-rank-unknown">미확인</span>'
-        return f'<div>{name_bits}{top10_html}</div><div class="rank-meta">선택한 날짜에 체크된 데이터 없음</div>'
+        return f'<div>{name_bits}</div><div class="rank-meta">선택한 날짜에 체크된 데이터 없음</div>'
 
     if selected_check["status"] == "error":
         value_pill = '<span class="status-pill pill-rank-unknown">체크 실패</span>'
@@ -145,7 +145,7 @@ def build_rank_info_html(store_name, keyword_row, selected_check, previous_check
             else:
                 delta_pill = '<span class="status-pill pill-rank-same">- (유지)</span>'
 
-    return f'<div>{name_bits} {value_pill}{delta_pill}{top10_html}</div>'
+    return f'<div>{name_bits} {value_pill}{delta_pill}</div>'
 
 
 st.subheader("플레이스 순위 추적")
@@ -227,12 +227,16 @@ with st.container(border=True, key="section_rank_results"):
             if c and (not latest_checked_at or c["checked_at"] > latest_checked_at):
                 latest_checked_at = c["checked_at"]
 
-        col_title, col_meta = st.columns([3, 2], vertical_alignment="bottom")
-        with col_title:
-            st.markdown("#### 📍 전체 순위 현황")
-        with col_meta:
-            if latest_checked_at:
-                st.caption(f"체크 시각: {format_checked_at(latest_checked_at)}")
+        header_meta = (
+            f'<span class="rank-meta" style="font-size:13px; margin-left:10px;">'
+            f'체크 시각: {format_checked_at(latest_checked_at)}</span>'
+        ) if latest_checked_at else ""
+        st.markdown(
+            f'<div style="display:flex; align-items:baseline;">'
+            f'<span style="font-size:1.3rem; font-weight:700; letter-spacing:-0.02em;">📍 전체 순위 현황</span>'
+            f'{header_meta}</div>',
+            unsafe_allow_html=True,
+        )
 
         def _shift_selected_date(delta_days):
             st.session_state["pr_selected_date"] += timedelta(days=delta_days)
@@ -298,7 +302,11 @@ with st.container(border=True, key="section_rank_results"):
             with st.container(border=True, key=f"pr_kwgroup_{group_idx}"):
                 col_title, col_order = st.columns([9, 1], vertical_alignment="center")
                 with col_title:
-                    st.markdown(f"**{keyword_text}**")
+                    title_top10_html = ""
+                    if keyword_text in TOP10_KEYWORDS:
+                        rep_check = find_check_for_date(checks_by_keyword.get(rows[0]["id"], []), selected_date)
+                        title_top10_html = build_top10_html((rep_check or {}).get("top_places"))
+                    st.markdown(f"**{keyword_text}**{title_top10_html}", unsafe_allow_html=True)
                 with col_order:
                     with st.container(key=f"actions_prkwgroup_{group_idx}"):
                         if st.button(
@@ -322,15 +330,11 @@ with st.container(border=True, key="section_rank_results"):
                     selected_check = find_check_for_date(checks, selected_date)
                     previous_check = find_check_for_date(checks, previous_date)
 
-                    top10_html = ""
-                    if keyword_text in TOP10_KEYWORDS:
-                        top10_html = build_top10_html((selected_check or {}).get("top_places"))
-
                     with st.container(key=f"pr_kwrow_{kw['id']}"):
                         col_info, col_delete = st.columns([20, 1], vertical_alignment="center")
                         with col_info:
                             st.markdown(
-                                build_rank_info_html(store_name, kw, selected_check, previous_check, top10_html),
+                                build_rank_info_html(store_name, kw, selected_check, previous_check),
                                 unsafe_allow_html=True,
                             )
                         with col_delete:

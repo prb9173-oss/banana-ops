@@ -230,7 +230,7 @@ st.markdown(f"""
     }}
     /* 한 그룹 카드 안에서 지점별 행을 구분선으로 분리 */
     div[class*="st-key-pr_kwrow_"] {{
-        padding: 8px 0 !important;
+        padding: 4px 0 !important;
         border-bottom: 1px solid #EEF0F3;
     }}
     div[class*="st-key-pr_kwrow_"]:last-of-type {{
@@ -379,9 +379,10 @@ st.markdown(f"""
         background-color: #FEF2F2 !important;
         border: none !important;
         box-shadow: none !important;
-        width: 26px !important;
-        height: 26px !important;
+        width: 20px !important;
+        height: 20px !important;
         min-width: unset !important;
+        min-height: unset !important;
         padding: 0 !important;
         margin: 0 !important;
         display: flex !important;
