@@ -329,9 +329,12 @@ with st.container(border=True, key="section_rank_results"):
                                 unsafe_allow_html=True,
                             )
                         with col_delete:
+                            # 완전 삭제(DELETE)하면 place_rank_checks가 ON DELETE CASCADE라
+                            # 그동안 쌓인 체크 이력까지 같이 사라진다. 대신 비활성화만 해서
+                            # 목록/자동 체크에서는 빠지되 이력은 그대로 보존한다.
                             if st.button("-", key=f"kwdel_{kw['id']}"):
-                                get_supabase_client().table("place_rank_keywords").delete().eq(
-                                    "id", kw["id"]
-                                ).execute()
+                                get_supabase_client().table("place_rank_keywords").update(
+                                    {"is_active": False}
+                                ).eq("id", kw["id"]).execute()
                                 fetch_all_keywords.clear()
                                 st.rerun()
