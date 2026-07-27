@@ -188,6 +188,86 @@ def render_table_with_copy_btn(df, title, is_summary_table=False, show_copy_btn=
         render_plain_table(df, is_summary_table)
 
 
+def render_multi_table_row_with_copy_btns(df_list):
+    """여러 표를 한 iframe 안에 나란히 렌더링한다 — 표마다 독립된 복사 버튼은 유지하면서,
+    st.components.v1.html을 표 개수만큼 따로 호출하면 iframe이 그만큼 늘어나 로딩이
+    느려지므로 한 번의 iframe 호출로 합친다."""
+    cells_html = []
+    max_rows = 0
+    for i, df in enumerate(df_list):
+        table_html = convert_df_to_html_grid(df, is_summary_table=False)
+        tsv_text = dataframe_to_tsv_string(df)
+        uid = f"{i}-{int(time.time() * 1000)}-{abs(hash(tsv_text))}"
+        max_rows = max(max_rows, len(df))
+        cells_html.append(f"""
+        <div style="flex:1; min-width:0;">
+            {table_html}
+            <button id="btn-{uid}" onclick="copyText('{uid}')" style="
+                background-color: #1E3A5F;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 8px;
+                padding: 10px 16px;
+                font-size: 13px;
+                font-weight: 700;
+                cursor: pointer;
+                width: 100%;
+                margin-top: 10px;
+                box-shadow: 0 1px 2px rgba(16,24,40,0.08);
+                text-align: center;
+                display: block;
+                transition: background-color 0.15s ease;
+            " onmouseover="this.style.backgroundColor='#16304C'" onmouseout="this.style.backgroundColor='#1E3A5F'">
+                📋 복사하기
+            </button>
+            <textarea id="area-{uid}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
+        </div>
+        """)
+
+    html_content = f"""
+    <div class="table-row" style="display:flex; gap:16px; font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
+        {''.join(cells_html)}
+    </div>
+    <style>
+    @media (max-width: 700px) {{
+        .table-row {{ flex-direction: column; }}
+    }}
+    </style>
+    <script>
+    function copyText(uid) {{
+        try {{
+            var text = document.getElementById('area-' + uid).value;
+            if (navigator.clipboard && navigator.clipboard.writeText) {{
+                navigator.clipboard.writeText(text).then(function() {{ showCopied(uid); }}).catch(function() {{ fallbackCopy(uid); }});
+            }} else {{
+                fallbackCopy(uid);
+            }}
+        }} catch (e) {{ fallbackCopy(uid); }}
+    }}
+    function fallbackCopy(uid) {{
+        var t = document.getElementById('area-' + uid);
+        t.select();
+        t.setSelectionRange(0, 99999);
+        document.execCommand('copy');
+        showCopied(uid);
+    }}
+    function showCopied(uid) {{
+        var btn = document.getElementById('btn-' + uid);
+        btn.innerHTML = '✅ 복사 완료';
+        btn.style.backgroundColor = '#DCFCE7';
+        btn.style.color = '#166534';
+        setTimeout(function() {{
+            btn.innerHTML = '📋 복사하기';
+            btn.style.backgroundColor = '#1E3A5F';
+            btn.style.color = '#FFFFFF';
+        }}, 2000);
+    }}
+    </script>
+    """
+    height = get_table_iframe_height(max_rows)
+    st.components.v1.html(html_content, height=height, scrolling=(height >= 600))
+
+
 def get_mock_campaigns(ad_type):
     if ad_type == '파워링크광고':
         return [{"nccCampaignId": "camp-sh-01", "name": "[검색] 브랜드_공식_캠페인"},
@@ -671,19 +751,13 @@ if show_data:
 
         st.markdown("#### 📊 일별 데이터")
 
-        col_date, col1, col2, col3 = st.columns([1, 1.2, 1.2, 1.2])
+        col_date, col_rest = st.columns([1, 3.6])
 
         with col_date:
             render_plain_table(date_df, is_summary_table=False)
 
-        with col1:
-            render_table_with_copy_btn(imp_clk_df, "", is_summary_table=False)
-
-        with col2:
-            render_table_with_copy_btn(cpc_df, "", is_summary_table=False)
-
-        with col3:
-            render_table_with_copy_btn(cost_df, "", is_summary_table=False)
+        with col_rest:
+            render_multi_table_row_with_copy_btns([imp_clk_df, cpc_df, cost_df])
 
         if kw_df is not None and not kw_df.empty:
             st.markdown("---")

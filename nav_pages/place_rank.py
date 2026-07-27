@@ -13,12 +13,14 @@ def get_supabase_client():
     return create_client(sb["url"], sb["key"])
 
 
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_stores():
     client = get_supabase_client()
     res = client.table("store_campaigns").select("*").order("display_order").execute()
     return res.data or []
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_all_keywords():
     client = get_supabase_client()
     res = (
@@ -31,6 +33,7 @@ def fetch_all_keywords():
     return res.data or []
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def fetch_all_checks(keyword_ids):
     if not keyword_ids:
         return {}
@@ -38,7 +41,7 @@ def fetch_all_checks(keyword_ids):
     res = (
         client.table("place_rank_checks")
         .select("*")
-        .in_("keyword_id", keyword_ids)
+        .in_("keyword_id", list(keyword_ids))
         .order("checked_at", desc=True)
         .execute()
     )
@@ -157,7 +160,7 @@ else:
     )
 
 all_keywords = fetch_all_keywords()
-checks_by_keyword = fetch_all_checks([k["id"] for k in all_keywords])
+checks_by_keyword = fetch_all_checks(tuple(k["id"] for k in all_keywords))
 
 with st.container(border=True, key="section_add_keyword"):
     st.markdown(f"#### 📝 추적 키워드 추가 — {selected_store}")
@@ -179,6 +182,7 @@ with st.container(border=True, key="section_add_keyword"):
                         "keyword": new_keyword.strip(),
                         "display_order": next_order,
                     }).execute()
+                    fetch_all_keywords.clear()
                     st.success(f"'{selected_store}'에 '{new_keyword.strip()}' 키워드가 추가되었습니다.")
                     st.rerun()
                 except Exception as e:
@@ -221,4 +225,5 @@ with st.container(border=True, key="section_rank_results"):
                                 get_supabase_client().table("place_rank_keywords").delete().eq(
                                     "id", kw["id"]
                                 ).execute()
+                                fetch_all_keywords.clear()
                                 st.rerun()
