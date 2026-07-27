@@ -277,75 +277,88 @@ def render_summary_table_with_copy_btn(title, header_value_pairs):
     st.components.v1.html(html_content, height=height, scrolling=False)
 
 
-def render_multi_table_row_with_copy_btns(columns):
-    """columns: [(df, show_copy_btn), ...]. 여러 표를 한 iframe 안에 나란히 렌더링한다 —
-    표마다 독립된 복사 버튼은 유지하면서, st.components.v1.html을 표 개수만큼 따로
-    호출하면 iframe이 그만큼 늘어나 로딩이 느려지므로 한 번의 iframe 호출로 합친다.
-    show_copy_btn=False인 표(예: 날짜)는 버튼 없이 표시만 하고 복사 대상에서 제외한다."""
-    cells_html = []
-    max_rows = 0
-    for i, (df, show_copy_btn) in enumerate(columns):
-        table_html = convert_df_to_html_grid(df, is_summary_table=False)
-        max_rows = max(max_rows, len(df))
+def render_daily_table_with_copy_btn(raw_df):
+    """일별 데이터를 표 하나 + 복사 버튼 하나로 렌더링한다. 날짜는 참고용으로만 표시하고,
+    복사되는 값은 주간 총 합계표와 같은 틀(노출수, 클릭수, 클릭률, 평균 CPC, 원, 총비용, 원)을
+    날짜별로 반복해 엑셀의 금액/단위 분리 열 구조에 행 단위로 그대로 붙여넣을 수 있게 한다."""
+    headers = ["날짜", "노출수", "클릭수", "클릭률(%)", "평균 CPC", "원", "총비용", "원"]
 
-        button_html = ""
-        if show_copy_btn:
-            tsv_text = dataframe_to_tsv_string(df)
-            uid = f"{i}-{int(time.time() * 1000)}-{abs(hash(tsv_text))}"
-            button_html = f"""
-            <button id="btn-{uid}" onclick="copyText('{uid}')" style="
-                background-color: #1E3A5F;
-                color: #FFFFFF;
-                border: none;
-                border-radius: 8px;
-                padding: 10px 16px;
-                font-size: 13px;
-                font-weight: 700;
-                cursor: pointer;
-                width: 100%;
-                margin-top: 10px;
-                box-shadow: 0 1px 2px rgba(16,24,40,0.08);
-                text-align: center;
-                display: block;
-                transition: background-color 0.15s ease;
-            " onmouseover="this.style.backgroundColor='#16304C'" onmouseout="this.style.backgroundColor='#1E3A5F'">
-                📋 복사하기
-            </button>
-            <textarea id="area-{uid}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
-            """
+    display_rows = []
+    copy_lines = []
+    for _, row in raw_df.iterrows():
+        imp = f"{int(row['노출수']):,}"
+        clk = f"{int(row['클릭수']):,}"
+        ctr = f"{row['클릭률(%)']:.2f}%"
+        cpc = f"{int(row['평균 CPC']):,}"
+        cost = f"{int(row['총비용']):,}"
+        display_rows.append([row['날짜'], imp, clk, ctr, cpc, "원", cost, "원"])
+        copy_lines.append("\t".join([imp, clk, ctr, cpc, "원", cost, "원"]))
 
-        cells_html.append(f"""
-        <div style="flex:1; min-width:0;">
-            {table_html}
-            {button_html}
-        </div>
-        """)
+    table_html = (
+        '<table style="width:100%; border-collapse:collapse; font-family:inherit; '
+        f'text-align:center; margin-top:10px; color:#16181D; border:1px solid {TABLE_BORDER}; white-space:nowrap;">'
+    )
+    table_html += (
+        f'<thead><tr style="background-color:{TABLE_HEADER_BG}; '
+        f'border-bottom:2px solid {TABLE_BORDER}; font-weight:600; height:36px;">'
+    )
+    for h in headers:
+        table_html += f'<th style="padding:10px; border:1px solid {TABLE_BORDER}; font-size:14px;">{h}</th>'
+    table_html += '</tr></thead><tbody>'
+    for r in display_rows:
+        table_html += f'<tr style="background-color:#FFFFFF; border-bottom:1px solid {TABLE_BORDER}; height:32px;">'
+        for v in r:
+            table_html += f'<td style="padding:8px; border:1px solid {TABLE_BORDER}; font-size:13px;">{v}</td>'
+        table_html += '</tr>'
+    table_html += '</tbody></table>'
+
+    tsv_text = "\n".join(copy_lines)
+    uid = f"daily-{int(time.time() * 1000)}-{abs(hash(tsv_text))}"
 
     html_content = f"""
     <style>body {{ margin: 0; }}</style>
-    <div class="table-row" style="display:flex; gap:16px; font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
-        {''.join(cells_html)}
+    <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
+        {table_html}
+        <button id="btn-{uid}" onclick="copyText()" style="
+            background-color: #1E3A5F;
+            color: #FFFFFF;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+            box-shadow: 0 1px 2px rgba(16,24,40,0.08);
+            text-align: center;
+            display: block;
+            transition: background-color 0.15s ease;
+        " onmouseover="this.style.backgroundColor='#16304C'" onmouseout="this.style.backgroundColor='#1E3A5F'">
+            📋 복사하기
+        </button>
+        <textarea id="area-{uid}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
     </div>
     <script>
-    function copyText(uid) {{
+    function copyText() {{
         try {{
-            var text = document.getElementById('area-' + uid).value;
+            var text = document.getElementById('area-{uid}').value;
             if (navigator.clipboard && navigator.clipboard.writeText) {{
-                navigator.clipboard.writeText(text).then(function() {{ showCopied(uid); }}).catch(function() {{ fallbackCopy(uid); }});
+                navigator.clipboard.writeText(text).then(showCopied).catch(fallbackCopy);
             }} else {{
-                fallbackCopy(uid);
+                fallbackCopy();
             }}
-        }} catch (e) {{ fallbackCopy(uid); }}
+        }} catch (e) {{ fallbackCopy(); }}
     }}
-    function fallbackCopy(uid) {{
-        var t = document.getElementById('area-' + uid);
+    function fallbackCopy() {{
+        var t = document.getElementById('area-{uid}');
         t.select();
         t.setSelectionRange(0, 99999);
         document.execCommand('copy');
-        showCopied(uid);
+        showCopied();
     }}
-    function showCopied(uid) {{
-        var btn = document.getElementById('btn-' + uid);
+    function showCopied() {{
+        var btn = document.getElementById('btn-{uid}');
         btn.innerHTML = '✅ 복사 완료';
         btn.style.backgroundColor = '#DCFCE7';
         btn.style.color = '#166534';
@@ -357,7 +370,7 @@ def render_multi_table_row_with_copy_btns(columns):
     }}
     </script>
     """
-    height = get_table_iframe_height(max_rows)
+    height = get_table_iframe_height(len(display_rows))
     st.components.v1.html(html_content, height=height, scrolling=(height >= 600))
 
 
@@ -825,11 +838,6 @@ if show_data:
         total_ctr = round((total_clk / total_imp) * 100, 2) if total_imp > 0 else 0.0
         total_cpc = int(total_cost / total_clk) if total_clk > 0 else 0
 
-        date_df = raw_df[["날짜"]].copy()
-        imp_clk_df = raw_df[["노출수", "클릭수"]].copy()
-        cpc_df = raw_df[["평균 CPC"]].copy()
-        cost_df = raw_df[["총비용"]].copy()
-
         render_summary_table_with_copy_btn("🏆 주간 총 합계표", [
             ("총 노출수", f"{int(total_imp):,}"),
             ("총 클릭수", f"{int(total_clk):,}"),
@@ -844,12 +852,7 @@ if show_data:
 
         st.markdown("#### 📊 일별 데이터")
 
-        render_multi_table_row_with_copy_btns([
-            (date_df, False),
-            (imp_clk_df, True),
-            (cpc_df, True),
-            (cost_df, True),
-        ])
+        render_daily_table_with_copy_btn(raw_df)
 
         if kw_df is not None and not kw_df.empty:
             st.markdown("---")
