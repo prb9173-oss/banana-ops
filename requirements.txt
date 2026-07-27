@@ -3,5 +3,3 @@ pandas
 requests
 openpyxl
 supabase
-selenium
-selenium-stealth
