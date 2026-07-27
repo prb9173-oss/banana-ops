@@ -8,8 +8,34 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  check:
+  # 키워드를 한 잡에서 순서대로 조회하면 전부 같은 GitHub Actions 러너 IP를 쓰게 되어,
+  # 첫 요청 이후부터 네이버가 빈 결과를 돌려주는 패턴이 로그로 확인됐다 (2026-07-27).
+  # 키워드별로 잡을 나눠 러너(=IP) 자체를 분리하는 것이 근본 대응이라 매트릭스로 분리한다.
+  list-keywords:
     runs-on: ubuntu-latest
+    outputs:
+      keyword_ids: ${{ steps.fetch.outputs.keyword_ids }}
+    steps:
+      - name: Fetch active keyword ids
+        id: fetch
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ids=$(curl -s "$SUPABASE_URL/rest/v1/place_rank_keywords?select=id&is_active=eq.true" \
+            -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY" \
+            | python3 -c "import json,sys; print(json.dumps([r['id'] for r in json.load(sys.stdin)]))")
+          echo "keyword_ids=$ids" >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: list-keywords
+    if: needs.list-keywords.outputs.keyword_ids != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 2
+      fail-fast: false
+      matrix:
+        keyword_id: ${{ fromJson(needs.list-keywords.outputs.keyword_ids) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,4 +50,5 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TARGET_KEYWORD_ID: ${{ matrix.keyword_id }}
         run: python scripts/check_place_rank.py

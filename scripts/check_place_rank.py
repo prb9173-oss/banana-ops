@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 import re
 import time
 import urllib.parse
@@ -23,6 +24,7 @@ MAX_SCROLLS = 60
 STABLE_SCROLLS_TO_STOP = 3
 PAGE_LOAD_WAIT = 20  # 고정 sleep 대신 요소가 실제로 나타날 때까지 최대 대기하는 시간(초)
 MAX_ATTEMPTS_PER_KEYWORD = 3  # 네이버 봇 탐지에 확률적으로 걸리는 경우를 감안한 재시도 횟수
+TARGET_KEYWORD_ID = os.environ.get("TARGET_KEYWORD_ID")  # 지정 시 이 키워드 하나만 체크
 
 
 def get_supabase_client():
@@ -202,7 +204,21 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     client = get_supabase_client()
     rows = fetch_active_keyword_rows(client)
+
+    if TARGET_KEYWORD_ID:
+        rows = [r for r in rows if str(r["id"]) == str(TARGET_KEYWORD_ID)]
+        if not rows:
+            logging.warning("keyword_id=%s는 활성 키워드 목록에 없음 (삭제/비활성화된 것으로 추정)", TARGET_KEYWORD_ID)
+            return
+
     logging.info("추적할 키워드 %d개", len(rows))
+
+    # 같은 워크플로우 실행(=같은 GitHub Actions 러너 IP) 안에서 여러 키워드를 연달아
+    # 조회하면 첫 요청 이후부터 결과 목록이 비어오는 패턴이 실측으로 확인됐다
+    # (2026-07-27, 로그 기준). 키워드별로 워크플로우를 매트릭스로 분리해 러너(IP)
+    # 자체를 나누는 게 근본 대응이고, 이 지연은 그와 별개로 여러 매트릭스 잡이
+    # 동시에 뜨더라도 네이버로 요청이 같은 순간에 몰리지 않게 살짝 흩어주는 보완책이다.
+    time.sleep(random.uniform(0, 15))
 
     for row in rows:
         store = row.get("store_campaigns") or {}
