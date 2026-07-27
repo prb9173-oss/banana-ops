@@ -140,32 +140,30 @@ if supabase_error:
     st.error(f"❌ Supabase 연결 중 오류가 발생했습니다: {supabase_error}")
     st.stop()
 
-st.sidebar.markdown("### 🏪 키워드 추가할 매장")
-
 if not stores:
-    st.sidebar.warning("등록된 매장이 없습니다.")
     st.info("등록된 매장이 없습니다. `store_campaigns` 테이블에 매장을 먼저 등록해 주세요.")
     st.stop()
-
-store_options = {s["store_name"]: s for s in stores}
-selected_store = st.sidebar.selectbox(
-    "새 키워드를 등록할 매장을 선택해 주세요.", options=list(store_options.keys()), key="pr_selected_store"
-)
-selected_store_row = store_options[selected_store]
-
-if selected_store_row.get("naver_place_id"):
-    st.sidebar.caption(f"네이버 플레이스 ID: {selected_store_row['naver_place_id']}")
-else:
-    st.sidebar.warning(
-        "이 매장은 아직 네이버 플레이스 ID가 등록되지 않았습니다 — "
-        "Supabase `store_campaigns` 테이블에서 `naver_place_id`를 입력해 주세요."
-    )
 
 all_keywords = fetch_all_keywords()
 checks_by_keyword = fetch_all_checks(tuple(k["id"] for k in all_keywords))
 
 with st.container(border=True, key="section_add_keyword"):
-    st.markdown(f"#### 📝 추적 키워드 추가 — {selected_store}")
+    st.markdown("#### 📝 추적 키워드 추가")
+
+    store_options = {s["store_name"]: s for s in stores}
+    selected_store = st.selectbox(
+        "매장 선택", options=list(store_options.keys()), key="pr_selected_store"
+    )
+    selected_store_row = store_options[selected_store]
+
+    if selected_store_row.get("naver_place_id"):
+        st.caption(f"네이버 플레이스 ID: {selected_store_row['naver_place_id']}")
+    else:
+        st.warning(
+            "이 매장은 아직 네이버 플레이스 ID가 등록되지 않았습니다 — "
+            "Supabase `store_campaigns` 테이블에서 `naver_place_id`를 입력해 주세요."
+        )
+
     with st.form("add_place_keyword_form", clear_on_submit=True):
         new_keyword = st.text_input("키워드", placeholder="예: 중문 흑돼지")
         submitted = st.form_submit_button("키워드 추가")
@@ -195,11 +193,27 @@ with st.container(border=True, key="section_rank_results"):
     if not all_keywords:
         st.info("추적 중인 타겟 키워드가 없습니다. 위에서 키워드를 추가해 주세요.")
     else:
-        col_date, col_basis = st.columns([2, 2])
-        with col_date:
-            selected_date = st.date_input(
-                "조회할 날짜", value=datetime.now(KST).date(), key="pr_selected_date"
-            )
+        if "pr_selected_date" not in st.session_state:
+            st.session_state["pr_selected_date"] = datetime.now(KST).date()
+
+        def _shift_selected_date(delta_days):
+            st.session_state["pr_selected_date"] += timedelta(days=delta_days)
+
+        with st.container(key="pr_date_nav"):
+            col_prev, col_date, col_next, col_basis = st.columns([0.25, 1.15, 0.25, 2], vertical_alignment="top")
+            with col_prev:
+                st.button(
+                    "◀", key="pr_date_prev",
+                    on_click=_shift_selected_date, args=(-1,),
+                )
+            with col_date:
+                selected_date = st.date_input("조회할 날짜", key="pr_selected_date")
+            with col_next:
+                st.button(
+                    "▶", key="pr_date_next",
+                    on_click=_shift_selected_date, args=(1,),
+                    disabled=st.session_state["pr_selected_date"] >= datetime.now(KST).date(),
+                )
         with col_basis:
             compare_basis = st.radio(
                 "비교 기준", ["전날 대비", "일주일 전 대비"], horizontal=True, key="pr_compare_basis"

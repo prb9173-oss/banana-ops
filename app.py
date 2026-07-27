@@ -283,6 +283,43 @@ st.markdown(f"""
         color: #FFFFFF !important;
         font-weight: 600 !important;
     }}
+    /* 플레이스 순위 날짜 이동(◀▶) 버튼: 옆에 붙는 날짜 입력창과 간격을 좁히고, 입력창 위 라벨
+       높이만큼 버튼을 아래로 밀어서 "입력창 박스" 자체와 세로 중앙이 맞도록 함 */
+    div[class*="st-key-pr_date_nav"] div[data-testid="stHorizontalBlock"] {{
+        gap: 0.4rem !important;
+        align-items: flex-start !important;
+    }}
+    /* 버튼/입력창이 실제 렌더링 크기보다 넓은 컬럼 박스 안에 들어있어 양옆에 빈 공간이
+       남던 문제 보정 — 세 컬럼(◀ / 날짜 입력 / ▶) 모두 내용물 크기에 맞춰 줄인다
+       (화면 폭이 바뀌어도 안정적으로 동작) */
+    div[class*="st-key-pr_date_nav"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(1),
+    div[class*="st-key-pr_date_nav"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(2),
+    div[class*="st-key-pr_date_nav"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:nth-child(3) {{
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: auto !important;
+    }}
+    div[class*="st-key-pr_date_prev"] button,
+    div[class*="st-key-pr_date_next"] button {{
+        width: 25px !important;
+        height: 25px !important;
+        min-width: 25px !important;
+        min-height: 25px !important;
+        margin-top: 34px !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        background-color: #475569 !important;
+        border: none !important;
+        border-radius: 6px !important;
+        box-shadow: none !important;
+    }}
+    div[class*="st-key-pr_date_prev"] button p,
+    div[class*="st-key-pr_date_next"] button p {{
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
+    }}
     div[class*="st-key-edit_"] button {{
         background-color: #FFFFFF !important;
         border: 1px solid #CBD5E1 !important;
