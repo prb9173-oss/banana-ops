@@ -103,7 +103,9 @@ def build_rank_info_html(store_name, keyword_row, selected_check, previous_check
         value_pill = '<span class="status-pill pill-rank-unknown">체크 실패</span>'
         delta_pill = ""
     elif selected_check["status"] == "not_found" or selected_check["rank"] is None:
-        value_pill = '<span class="status-pill pill-rank-unknown">누락</span>'
+        scanned = selected_check.get("results_scanned")
+        label = f"{scanned}위 밖" if scanned else "순위권 밖"
+        value_pill = f'<span class="status-pill pill-rank-unknown">{label}</span>'
         delta_pill = ""
     else:
         value_pill = f'<span class="status-pill pill-rank-same">{selected_check["rank"]}위</span>'
