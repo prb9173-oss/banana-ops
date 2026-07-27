@@ -66,6 +66,21 @@ def group_by_keyword(keyword_rows):
     return [(kw, groups[kw]) for kw in order]
 
 
+def swap_keyword_group_order(keyword_groups, idx_a, idx_b):
+    """키워드 그룹(카드) 두 개의 표시 순서를 통째로 맞바꾼다. place_rank_keywords의
+    display_order는 원래 매장별로 독립적이었는데, 여기서는 '그룹을 순서대로 쭉 이어
+    붙였을 때의 위치'로 전체를 다시 매겨서 그룹 단위 정렬을 보장한다. 그룹 안에서
+    매장별 순서(같은 그룹 내 행 순서)는 그대로 유지한다."""
+    client = get_supabase_client()
+    reordered = list(keyword_groups)
+    reordered[idx_a], reordered[idx_b] = reordered[idx_b], reordered[idx_a]
+    counter = 0
+    for _, rows in reordered:
+        for row in rows:
+            client.table("place_rank_keywords").update({"display_order": counter}).eq("id", row["id"]).execute()
+            counter += 1
+
+
 def format_checked_at(checked_at):
     """서버가 어느 타임존에서 돌든(Streamlit Cloud는 UTC) 항상 한국 시간 기준으로
     보이도록 시스템 로컬 타임존(astimezone())이 아니라 Asia/Seoul로 명시 변환한다."""
@@ -276,7 +291,25 @@ with st.container(border=True, key="section_rank_results"):
 
         for group_idx, (keyword_text, rows) in enumerate(keyword_groups):
             with st.container(border=True, key=f"pr_kwgroup_{group_idx}"):
-                st.markdown(f"**{keyword_text}**")
+                col_title, col_order = st.columns([9, 1], vertical_alignment="center")
+                with col_title:
+                    st.markdown(f"**{keyword_text}**")
+                with col_order:
+                    with st.container(key=f"actions_prkwgroup_{group_idx}"):
+                        if st.button(
+                            ":material/arrow_upward:", key=f"up_pr_kwgroup_{group_idx}",
+                            disabled=(group_idx == 0),
+                        ):
+                            swap_keyword_group_order(keyword_groups, group_idx, group_idx - 1)
+                            fetch_all_keywords.clear()
+                            st.rerun()
+                        if st.button(
+                            ":material/arrow_downward:", key=f"down_pr_kwgroup_{group_idx}",
+                            disabled=(group_idx == len(keyword_groups) - 1),
+                        ):
+                            swap_keyword_group_order(keyword_groups, group_idx, group_idx + 1)
+                            fetch_all_keywords.clear()
+                            st.rerun()
 
                 for kw in rows:
                     store_name = (kw.get("store_campaigns") or {}).get("store_name", "")
