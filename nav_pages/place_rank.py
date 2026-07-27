@@ -25,7 +25,7 @@ def fetch_all_keywords():
     client = get_supabase_client()
     res = (
         client.table("place_rank_keywords")
-        .select("*, store_campaigns(store_name, naver_place_id, naver_place_name)")
+        .select("*, store_campaigns(store_name, naver_place_id, naver_place_name, display_order)")
         .eq("is_active", True)
         .order("display_order")
         .execute()
@@ -54,7 +54,9 @@ def fetch_all_checks(keyword_ids):
 def group_by_keyword(keyword_rows):
     """키워드 텍스트가 같은 행들을 묶는다 — 같은 키워드를 여러 매장(지점)에
     등록해두면 실무 보고서처럼 한 줄에 지점별 순위를 나란히 볼 수 있게 하기 위함.
-    최초 등장 순서를 그대로 유지한다."""
+    그룹 자체의 순서는 최초 등장 순서를 유지하되, 그룹 안 매장 순서는 별도 버튼 없이
+    매장 자체의 display_order("매장 선택" 드롭다운과 동일한 순서)를 따르게 해서
+    키워드마다 매장 순서가 제각각이 되는 걸 막는다."""
     groups = {}
     order = []
     for row in keyword_rows:
@@ -63,6 +65,8 @@ def group_by_keyword(keyword_rows):
             groups[kw] = []
             order.append(kw)
         groups[kw].append(row)
+    for rows in groups.values():
+        rows.sort(key=lambda r: (r.get("store_campaigns") or {}).get("display_order") or 0)
     return [(kw, groups[kw]) for kw in order]
 
 
@@ -190,10 +194,11 @@ with st.container(border=True, key="section_add_keyword"):
             if not new_keyword.strip():
                 st.warning("키워드를 입력해 주세요.")
             else:
-                same_store_keywords = [
-                    k for k in all_keywords if k["store_id"] == selected_store_row["id"]
-                ]
-                next_order = max([k.get("display_order") or 0 for k in same_store_keywords], default=0) + 1
+                # 같은 매장 안에서만 순서를 매기면, 그룹 재정렬(swap_keyword_group_order)로
+                # display_order가 이미 전체 기준으로 다시 매겨진 뒤라 새 키워드가 목록
+                # 중간에 끼어들 수 있다. 전체 최댓값 기준으로 매겨서 항상 맨 아래(새
+                # 그룹)로 추가되게 한다.
+                next_order = max([k.get("display_order") or 0 for k in all_keywords], default=0) + 1
                 try:
                     get_supabase_client().table("place_rank_keywords").insert({
                         "store_id": selected_store_row["id"],
