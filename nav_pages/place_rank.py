@@ -87,7 +87,14 @@ def find_check_for_date(checks, target_date):
     return None
 
 
-def build_rank_info_html(store_name, keyword_row, selected_check, previous_check):
+def build_top10_html(top_places):
+    if not top_places:
+        return ""
+    names = " ".join(f"{i}.{p.get('name', '')}" for i, p in enumerate(top_places[:10], start=1))
+    return f' <span class="rank-top10">{names}</span>'
+
+
+def build_rank_info_html(store_name, keyword_row, selected_check, previous_check, top10_html=""):
     is_active = keyword_row.get("is_active", True)
 
     name_bits = f'<span class="rank-kw">{store_name}</span>'
@@ -97,7 +104,7 @@ def build_rank_info_html(store_name, keyword_row, selected_check, previous_check
 
     if not selected_check:
         name_bits += ' <span class="status-pill pill-rank-unknown">미확인</span>'
-        return f'<div>{name_bits}</div><div class="rank-meta">선택한 날짜에 체크된 데이터 없음</div>'
+        return f'<div>{name_bits}{top10_html}</div><div class="rank-meta">선택한 날짜에 체크된 데이터 없음</div>'
 
     if selected_check["status"] == "error":
         value_pill = '<span class="status-pill pill-rank-unknown">체크 실패</span>'
@@ -119,11 +126,7 @@ def build_rank_info_html(store_name, keyword_row, selected_check, previous_check
             else:
                 delta_pill = '<span class="status-pill pill-rank-same">- (유지)</span>'
 
-    meta_text = f"체크 시각: {format_checked_at(selected_check['checked_at'])}"
-    return (
-        f'<div>{name_bits} {value_pill}{delta_pill}</div>'
-        f'<div class="rank-meta">{meta_text}</div>'
-    )
+    return f'<div>{name_bits} {value_pill}{delta_pill}{top10_html}</div>'
 
 
 st.subheader("플레이스 순위 추적")
@@ -189,12 +192,27 @@ with st.container(border=True, key="section_add_keyword"):
                     st.error(f"❌ 키워드 추가 중 오류가 발생했습니다: {e}")
 
 with st.container(border=True, key="section_rank_results"):
-    st.markdown("#### 📍 전체 순위 현황")
     if not all_keywords:
+        st.markdown("#### 📍 전체 순위 현황")
         st.info("추적 중인 타겟 키워드가 없습니다. 위에서 키워드를 추가해 주세요.")
     else:
         if "pr_selected_date" not in st.session_state:
             st.session_state["pr_selected_date"] = datetime.now(KST).date()
+
+        # 키워드마다 개별로 체크 시각을 표시하는 대신, 이 조회 날짜에 대해 실제로 체크된
+        # 것들 중 가장 늦은 시각 하나만 헤더 옆에 대표로 보여준다.
+        latest_checked_at = None
+        for kw in all_keywords:
+            c = find_check_for_date(checks_by_keyword.get(kw["id"], []), st.session_state["pr_selected_date"])
+            if c and (not latest_checked_at or c["checked_at"] > latest_checked_at):
+                latest_checked_at = c["checked_at"]
+
+        col_title, col_meta = st.columns([3, 2], vertical_alignment="bottom")
+        with col_title:
+            st.markdown("#### 📍 전체 순위 현황")
+        with col_meta:
+            if latest_checked_at:
+                st.caption(f"체크 시각: {format_checked_at(latest_checked_at)}")
 
         def _shift_selected_date(delta_days):
             st.session_state["pr_selected_date"] += timedelta(days=delta_days)
@@ -214,26 +232,67 @@ with st.container(border=True, key="section_rank_results"):
                     on_click=_shift_selected_date, args=(1,),
                     disabled=st.session_state["pr_selected_date"] >= datetime.now(KST).date(),
                 )
-        with col_basis:
-            compare_basis = st.radio(
-                "비교 기준", ["전날 대비", "일주일 전 대비"], horizontal=True, key="pr_compare_basis"
-            )
+            with col_basis:
+                compare_basis = st.radio(
+                    "비교 기준", ["전날 대비", "일주일 전 대비"], horizontal=True, key="pr_compare_basis"
+                )
         previous_date = selected_date - timedelta(days=1 if compare_basis == "전날 대비" else 7)
 
-        for group_idx, (keyword_text, rows) in enumerate(group_by_keyword(all_keywords)):
+        # 이 두 표시는 모든 키워드에 일괄 적용하는 범용 기능이 아니라, 실무 보고서에서
+        # 실제로 그렇게 쓰이는 특정 키워드 텍스트에만 조건부로 바로 보이게 한다(펼치기 없음).
+        WEEKLY_SNAPSHOT_KEYWORDS = {"제주도 맛집"}
+        TOP10_KEYWORDS = {"함덕 맛집", "중문 맛집"}
+
+        keyword_groups = group_by_keyword(all_keywords)
+
+        # 실무 보고서와 동일하게, 제주도 맛집의 3주 스냅샷은 매장별 순위 카드들과 섞지 않고
+        # 최상단에 별도 구역으로 분리한다.
+        for snap_idx, (keyword_text, rows) in enumerate(keyword_groups):
+            if keyword_text not in WEEKLY_SNAPSHOT_KEYWORDS:
+                continue
+            with st.container(border=True, key=f"pr_snapshot_{snap_idx}"):
+                st.markdown(f"**{keyword_text}** — 최근 3주")
+                rep_checks = checks_by_keyword.get(rows[0]["id"], [])
+                with st.container(key=f"pr_snapshot_weeks_{snap_idx}"):
+                    snap_cols = st.columns(3, vertical_alignment="top")
+                    for i, weeks_back in enumerate([2, 1, 0]):
+                        snap_date = selected_date - timedelta(days=7 * weeks_back)
+                        snap_check = find_check_for_date(rep_checks, snap_date)
+                        with snap_cols[i]:
+                            st.markdown(f"**{snap_date.strftime('%m/%d')}**")
+                            snap_places = (snap_check or {}).get("top_places")
+                            if snap_places:
+                                top14 = snap_places[:14]
+                                half = (len(top14) + 1) // 2
+                                left_col, right_col = st.columns(2)
+                                with left_col:
+                                    for j, p in enumerate(top14[:half], start=1):
+                                        st.markdown(f'<div class="rank-snapshot-item">{j}. {p.get("name", "")}</div>', unsafe_allow_html=True)
+                                with right_col:
+                                    for j, p in enumerate(top14[half:], start=half + 1):
+                                        st.markdown(f'<div class="rank-snapshot-item">{j}. {p.get("name", "")}</div>', unsafe_allow_html=True)
+                            else:
+                                st.caption("데이터 없음")
+
+        for group_idx, (keyword_text, rows) in enumerate(keyword_groups):
             with st.container(border=True, key=f"pr_kwgroup_{group_idx}"):
                 st.markdown(f"**{keyword_text}**")
+
                 for kw in rows:
                     store_name = (kw.get("store_campaigns") or {}).get("store_name", "")
                     checks = checks_by_keyword.get(kw["id"], [])
                     selected_check = find_check_for_date(checks, selected_date)
                     previous_check = find_check_for_date(checks, previous_date)
 
+                    top10_html = ""
+                    if keyword_text in TOP10_KEYWORDS:
+                        top10_html = build_top10_html((selected_check or {}).get("top_places"))
+
                     with st.container(key=f"pr_kwrow_{kw['id']}"):
-                        col_info, col_delete = st.columns([7, 1], vertical_alignment="center")
+                        col_info, col_delete = st.columns([20, 1], vertical_alignment="center")
                         with col_info:
                             st.markdown(
-                                build_rank_info_html(store_name, kw, selected_check, previous_check),
+                                build_rank_info_html(store_name, kw, selected_check, previous_check, top10_html),
                                 unsafe_allow_html=True,
                             )
                         with col_delete:

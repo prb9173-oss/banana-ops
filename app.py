@@ -26,6 +26,13 @@ st.markdown(f"""
     }}
     h1, h2, h3 {{ letter-spacing: -0.02em; font-weight: 700; }}
 
+    /* Streamlit 기본 페이지 좌우 여백(80px)이 넓어 콘텐츠 폭을 많이 잡아먹는다 —
+       와이드 레이아웃을 실제로 넓게 쓰도록 줄인다 */
+    div[data-testid="stMainBlockContainer"] {{
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+    }}
+
     div.stButton > button {{
         background-color: {PRIMARY};
         border: none;
@@ -130,6 +137,8 @@ st.markdown(f"""
     .rank-kw {{ font-size: 14px; font-weight: 600; color: #16181D; }}
     .rank-meta {{ font-size: 12px; color: {MUTED_TEXT}; margin-top: 2px; }}
     .rank-status-value {{ display: flex; align-items: center; gap: 6px; }}
+    .rank-top10 {{ font-size: 12px; color: #2563EB; }}
+    .rank-snapshot-item {{ font-size: 12px; color: #16181D; line-height: 1.6; }}
 
     /* On/Off 버튼을 상태 박스 기준 가로 중앙에, 바짝 붙여서 배치 */
     div[class*="st-key-onoff_actions"] {{
@@ -299,6 +308,18 @@ st.markdown(f"""
         width: auto !important;
         min-width: auto !important;
     }}
+    /* 제주도 맛집 3주 스냅샷: 주차별 목록 줄 수가 서로 다른데(예: 오늘=14줄, 과거=1줄
+       "데이터 없음"), align-items 기본값이 세 컬럼을 세로 중앙 정렬해버려서 짧은 컬럼이
+       아래로 밀려 보이던 문제 — 위쪽 정렬로 고정 */
+    div[class*="st-key-pr_snapshot_"] div[data-testid="stHorizontalBlock"] {{
+        align-items: flex-start !important;
+    }}
+    /* 제주도 맛집 3주 스냅샷: 실무 보고서 표처럼 주차 사이에 구분선을 넣는다
+       (◀▶ 두 개 열만이 아니라 세 개 주차 열 사이 경계 — nth-child(1)은 제외) */
+    div[class*="st-key-pr_snapshot_weeks_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:not(:first-child) {{
+        border-left: 1px solid #E3E6EB !important;
+        padding-left: 14px !important;
+    }}
     div[class*="st-key-pr_date_prev"] button,
     div[class*="st-key-pr_date_next"] button {{
         width: 25px !important;
@@ -347,17 +368,25 @@ st.markdown(f"""
         font-weight: 600 !important;
     }}
 
-    /* 플레이스 순위 키워드 삭제: 두꺼운 테두리 박스 대신 옅은 배경만으로 구분,
-       가로로 넓게 채워서 클릭 영역을 눈에 띄고 넉넉하게 만든다 */
+    /* 플레이스 순위 키워드 삭제 버튼을 오른쪽 끝에 딱 붙는 작은 크기로 줄이고,
+       그만큼 남는 폭을 왼쪽 정보(경쟁업체 목록 등 긴 텍스트)가 쓸 수 있게 컬럼도 같이 줄인다 */
+    div[class*="st-key-pr_kwrow_"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:last-child {{
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: auto !important;
+    }}
     div[class*="st-key-kwdel_"] button {{
         background-color: #FEF2F2 !important;
         border: none !important;
         box-shadow: none !important;
-        width: 56px !important;
+        width: 26px !important;
+        height: 26px !important;
         min-width: unset !important;
-        padding: 8px 0 !important;
-        margin: 0 0 0 auto !important;
-        display: block !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
         border-radius: 6px !important;
     }}
     div[class*="st-key-kwdel_"] button:hover {{
@@ -365,7 +394,7 @@ st.markdown(f"""
     }}
     div[class*="st-key-kwdel_"] button p {{
         color: #DC2626 !important;
-        font-size: 20px !important;
+        font-size: 15px !important;
         font-weight: 700 !important;
         line-height: 1 !important;
     }}

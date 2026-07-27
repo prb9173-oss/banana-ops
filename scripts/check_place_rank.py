@@ -108,11 +108,17 @@ def fetch_place_list_with_retries(keyword, max_attempts=MAX_ATTEMPTS_PER_KEYWORD
     raise RuntimeError(f"플레이스 목록을 가져오지 못함: {last_error}")
 
 
+TOP_PLACES_COUNT = 15  # 경쟁업체 Top10 표시 + 키워드 주차별 스냅샷, 두 화면 기능이 같이 쓸 여유분
+
+
 def check_place_rank(keyword, target_place_id, target_name):
     """조직 키워드에 대해 target_place_id(우선) 또는 target_name으로 매장을 찾아
     순위를 계산한다. getRestaurants 쿼리는 광고 목록(getAdBusinessList)과 별도라
-    결과에 광고가 섞이지 않는다 — 기존 스크래퍼의 '광고 제외 오가닉 순위'와 동일한 정의."""
+    결과에 광고가 섞이지 않는다 — 기존 스크래퍼의 '광고 제외 오가닉 순위'와 동일한 정의.
+    이미 받아온 목록의 상위 몇 개(top_places)를 같이 저장해 화면에서 경쟁업체
+    목록/주차별 스냅샷으로 재사용한다 — 추가 API 호출 없음."""
     items = fetch_place_list_with_retries(keyword)
+    top_places = [{"id": it.get("id"), "name": it.get("name")} for it in items[:TOP_PLACES_COUNT]]
 
     for rank, item in enumerate(items, start=1):
         matched = False
@@ -122,9 +128,9 @@ def check_place_rank(keyword, target_place_id, target_name):
             matched = (item.get("name") or "").strip() == target_name.strip()
 
         if matched:
-            return {"rank": rank, "results_scanned": rank, "status": "ok"}
+            return {"rank": rank, "results_scanned": rank, "status": "ok", "top_places": top_places}
 
-    return {"rank": None, "results_scanned": len(items), "status": "not_found"}
+    return {"rank": None, "results_scanned": len(items), "status": "not_found", "top_places": top_places}
 
 
 def record_result(client, keyword_id, result):
