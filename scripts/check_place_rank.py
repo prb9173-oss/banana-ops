@@ -13,8 +13,11 @@ GRAPHQL_URL = "https://api.place.naver.com/graphql"
 DEFAULT_X = "126.9783882"
 DEFAULT_Y = "37.5666103"
 MAX_DISPLAY = 100  # 서버가 한 응답당 최대 100개까지만 돌려줌(display를 늘려도 동일) —
-# 더 보려면 start를 옮겨 여러 번 호출해야 하는데, 그만큼 짧은 시간에 호출이 늘어나
-# 429(요청 제한)에 걸리는 것도 실측 확인됨 (2026-07-27). 늘리려면 별도로 리스크 검증 필요.
+# 더 보려면 start를 옮겨 여러 번 호출해야 한다.
+MAX_RANK_CHECK = 300  # 이 순위까지만 확인하고 포기한다 — 그 이상은 실무적으로 의미가 적고
+# 페이지 수(호출 수)가 늘어날수록 429(요청 제한) 위험도 커진다.
+PAGINATION_DELAY_SECONDS = 5  # 같은 키워드 안에서 다음 페이지(start=101, 201...)를 부를 때
+# 텀을 짧게 주면 429가 나는 게 실측 확인됨(2026-07-27) — 페이지 사이에만 추가로 쉬어간다.
 REQUEST_TIMEOUT = 15
 MAX_ATTEMPTS_PER_KEYWORD = 3
 
@@ -65,7 +68,7 @@ def fetch_active_keyword_rows(client):
     return res.data or []
 
 
-def fetch_place_list(keyword, display=MAX_DISPLAY):
+def fetch_place_list(keyword, start=1, display=MAX_DISPLAY):
     payload = [{
         "operationName": "getRestaurants",
         "variables": {
@@ -73,7 +76,7 @@ def fetch_place_list(keyword, display=MAX_DISPLAY):
                 "query": keyword,
                 "x": DEFAULT_X,
                 "y": DEFAULT_Y,
-                "start": 1,
+                "start": start,
                 "display": display,
                 "isNmap": False,
                 "deviceType": "mobile",
@@ -96,11 +99,11 @@ def fetch_place_list(keyword, display=MAX_DISPLAY):
     return result["data"]["restaurants"]["businesses"]["items"]
 
 
-def fetch_place_list_with_retries(keyword, max_attempts=MAX_ATTEMPTS_PER_KEYWORD):
+def fetch_place_list_with_retries(keyword, start=1, max_attempts=MAX_ATTEMPTS_PER_KEYWORD):
     last_error = None
     for attempt in range(1, max_attempts + 1):
         try:
-            return fetch_place_list(keyword)
+            return fetch_place_list(keyword, start=start)
         except Exception as e:
             last_error = e
             logging.warning("API 호출 실패 (시도 %d/%d): %s", attempt, max_attempts, e)
@@ -116,21 +119,36 @@ def check_place_rank(keyword, target_place_id, target_name):
     순위를 계산한다. getRestaurants 쿼리는 광고 목록(getAdBusinessList)과 별도라
     결과에 광고가 섞이지 않는다 — 기존 스크래퍼의 '광고 제외 오가닉 순위'와 동일한 정의.
     이미 받아온 목록의 상위 몇 개(top_places)를 같이 저장해 화면에서 경쟁업체
-    목록/주차별 스냅샷으로 재사용한다 — 추가 API 호출 없음."""
-    items = fetch_place_list_with_retries(keyword)
-    top_places = [{"id": it.get("id"), "name": it.get("name")} for it in items[:TOP_PLACES_COUNT]]
+    목록/주차별 스냅샷으로 재사용한다 — 추가 API 호출 없음.
+    한 페이지(MAX_DISPLAY)에서 못 찾으면 MAX_RANK_CHECK까지 다음 페이지(start=101, 201...)를
+    이어서 부른다 — 대부분의 매장은 1페이지 안에서 찾아지므로 실제로 추가 호출이
+    발생하는 경우는 드물다."""
+    top_places = None
+    total_scanned = 0
 
-    for rank, item in enumerate(items, start=1):
-        matched = False
-        if target_place_id:
-            matched = str(item.get("id")) == str(target_place_id)
-        elif target_name:
-            matched = (item.get("name") or "").strip() == target_name.strip()
+    for page_start in range(1, MAX_RANK_CHECK + 1, MAX_DISPLAY):
+        if page_start > 1:
+            time.sleep(PAGINATION_DELAY_SECONDS)
+        items = fetch_place_list_with_retries(keyword, start=page_start)
+        if top_places is None:
+            top_places = [{"id": it.get("id"), "name": it.get("name")} for it in items[:TOP_PLACES_COUNT]]
 
-        if matched:
-            return {"rank": rank, "results_scanned": rank, "status": "ok", "top_places": top_places}
+        for local_rank, item in enumerate(items, start=1):
+            matched = False
+            if target_place_id:
+                matched = str(item.get("id")) == str(target_place_id)
+            elif target_name:
+                matched = (item.get("name") or "").strip() == target_name.strip()
 
-    return {"rank": None, "results_scanned": len(items), "status": "not_found", "top_places": top_places}
+            if matched:
+                rank = page_start + local_rank - 1
+                return {"rank": rank, "results_scanned": rank, "status": "ok", "top_places": top_places}
+
+        total_scanned = page_start + len(items) - 1
+        if len(items) < MAX_DISPLAY:
+            break  # 이 페이지가 꽉 안 찼다는 건 결과가 더 없다는 뜻 — 다음 페이지를 불러도 소용없음
+
+    return {"rank": None, "results_scanned": total_scanned, "status": "not_found", "top_places": top_places or []}
 
 
 def record_result(client, keyword_id, result):
