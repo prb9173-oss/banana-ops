@@ -328,6 +328,13 @@ def swap_keyword_group_order(keyword_groups, idx_a, idx_b):
             counter += 1
 
 
+def _toggle_report_keyword(checkbox_key, keyword_id):
+    get_supabase_client().table("place_rank_keywords").update(
+        {"is_report_keyword": st.session_state[checkbox_key]}
+    ).eq("id", keyword_id).execute()
+    fetch_all_keywords.clear()
+
+
 def format_checked_at(checked_at):
     """서버가 어느 타임존에서 돌든(Streamlit Cloud는 UTC) 항상 한국 시간 기준으로
     보이도록 시스템 로컬 타임존(astimezone())이 아니라 Asia/Seoul로 명시 변환한다."""
@@ -409,129 +416,182 @@ if not stores:
 
 all_keywords = fetch_all_keywords()
 checks_by_keyword = fetch_all_checks(tuple(k["id"] for k in all_keywords))
+keyword_groups = group_by_keyword(all_keywords)
 
-with st.container(border=True, key="section_add_keyword"):
-    st.markdown("#### 📝 추적 키워드 추가")
+# 조회(전체 순위 현황)는 누구나, 추적 키워드 추가/순서변경/비활성화/보고용 표시
+# 여부처럼 실제 구성을 바꾸는 관리 기능은 관리자만 — season_keywords.py와 같은 패턴.
+tab_view, tab_manage = st.tabs(["📍 전체 순위 현황", "⚙️ 추적 키워드 관리"])
 
-    store_options = {s["store_name"]: s for s in stores}
-    selected_store = st.selectbox(
-        "매장 선택", options=list(store_options.keys()), key="pr_selected_store"
-    )
-    selected_store_row = store_options[selected_store]
+with tab_view:
+    with st.container(border=True, key="section_rank_results"):
+        if not all_keywords:
+            st.info("추적 중인 타겟 키워드가 없습니다. '⚙️ 추적 키워드 관리' 탭에서 키워드를 추가해 주세요.")
+        else:
+            if "pr_selected_date" not in st.session_state:
+                st.session_state["pr_selected_date"] = datetime.now(KST).date()
 
-    if selected_store_row.get("naver_place_id"):
-        st.caption(f"네이버 플레이스 ID: {selected_store_row['naver_place_id']}")
-    else:
-        st.warning(
-            "이 매장은 아직 네이버 플레이스 ID가 등록되지 않았습니다 — "
-            "Supabase `store_campaigns` 테이블에서 `naver_place_id`를 입력해 주세요."
-        )
+            # 키워드마다 개별로 체크 시각을 표시하는 대신, 이 조회 날짜에 대해 실제로 체크된
+            # 것들 중 가장 늦은 시각 하나만 대표로 보여준다.
+            latest_checked_at = None
+            for kw in all_keywords:
+                c = find_check_for_date(checks_by_keyword.get(kw["id"], []), st.session_state["pr_selected_date"])
+                if c and (not latest_checked_at or c["checked_at"] > latest_checked_at):
+                    latest_checked_at = c["checked_at"]
 
-    with st.form("add_place_keyword_form", clear_on_submit=True):
-        new_keyword = st.text_input("키워드", placeholder="예: 중문 흑돼지")
-        submitted = st.form_submit_button("키워드 추가")
+            if latest_checked_at:
+                st.caption(f"체크 시각: {format_checked_at(latest_checked_at)}")
 
-        if submitted:
-            if not new_keyword.strip():
-                st.warning("키워드를 입력해 주세요.")
-            else:
-                # 같은 매장 안에서만 순서를 매기면, 그룹 재정렬(swap_keyword_group_order)로
-                # display_order가 이미 전체 기준으로 다시 매겨진 뒤라 새 키워드가 목록
-                # 중간에 끼어들 수 있다. 전체 최댓값 기준으로 매겨서 항상 맨 아래(새
-                # 그룹)로 추가되게 한다.
-                next_order = max([k.get("display_order") or 0 for k in all_keywords], default=0) + 1
-                try:
-                    get_supabase_client().table("place_rank_keywords").insert({
-                        "store_id": selected_store_row["id"],
-                        "keyword": new_keyword.strip(),
-                        "display_order": next_order,
-                    }).execute()
-                    fetch_all_keywords.clear()
-                    st.success(f"'{selected_store}'에 '{new_keyword.strip()}' 키워드가 추가되었습니다.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ 키워드 추가 중 오류가 발생했습니다: {e}")
+            def _shift_selected_date(delta_days):
+                st.session_state["pr_selected_date"] += timedelta(days=delta_days)
 
-with st.container(border=True, key="section_rank_results"):
-    if not all_keywords:
-        st.markdown("#### 📍 전체 순위 현황")
-        st.info("추적 중인 타겟 키워드가 없습니다. 위에서 키워드를 추가해 주세요.")
-    else:
-        if "pr_selected_date" not in st.session_state:
-            st.session_state["pr_selected_date"] = datetime.now(KST).date()
+            with st.container(key="pr_date_nav"):
+                col_prev, col_date, col_next, col_basis = st.columns([0.25, 1.15, 0.25, 2], vertical_alignment="top")
+                with col_prev:
+                    st.button(
+                        "◀", key="pr_date_prev",
+                        on_click=_shift_selected_date, args=(-1,),
+                    )
+                with col_date:
+                    selected_date = st.date_input("조회할 날짜", key="pr_selected_date")
+                with col_next:
+                    st.button(
+                        "▶", key="pr_date_next",
+                        on_click=_shift_selected_date, args=(1,),
+                        disabled=st.session_state["pr_selected_date"] >= datetime.now(KST).date(),
+                    )
+                with col_basis:
+                    compare_basis = st.radio(
+                        "비교 기준", ["전날 대비", "일주일 전 대비"], horizontal=True, key="pr_compare_basis"
+                    )
+            previous_date = selected_date - timedelta(days=1 if compare_basis == "전날 대비" else 7)
 
-        # 키워드마다 개별로 체크 시각을 표시하는 대신, 이 조회 날짜에 대해 실제로 체크된
-        # 것들 중 가장 늦은 시각 하나만 헤더 옆에 대표로 보여준다.
-        latest_checked_at = None
-        for kw in all_keywords:
-            c = find_check_for_date(checks_by_keyword.get(kw["id"], []), st.session_state["pr_selected_date"])
-            if c and (not latest_checked_at or c["checked_at"] > latest_checked_at):
-                latest_checked_at = c["checked_at"]
+            # 이 두 표시는 모든 키워드에 일괄 적용하는 범용 기능이 아니라, 실무 보고서에서
+            # 실제로 그렇게 쓰이는 특정 키워드 텍스트에만 조건부로 바로 보이게 한다(펼치기 없음).
+            WEEKLY_SNAPSHOT_KEYWORDS = {"제주도 맛집"}
+            TOP10_KEYWORDS = {"함덕 맛집", "중문 맛집"}
 
-        header_meta = (
-            f'<span class="rank-meta" style="font-size:13px; margin-left:10px;">'
-            f'체크 시각: {format_checked_at(latest_checked_at)}</span>'
-        ) if latest_checked_at else ""
-        st.markdown(
-            f'<div style="display:flex; align-items:baseline;">'
-            f'<span style="font-size:1.3rem; font-weight:700; letter-spacing:-0.02em;">📍 전체 순위 현황</span>'
-            f'{header_meta}</div>',
-            unsafe_allow_html=True,
-        )
+            # 보고용(캡처 공유용) / 회의용(전체 키워드) — 둘 다 같은 브랜드 병합 표 형식을
+            # 쓰고, 보고용은 is_report_keyword로 표시된 키워드만 걸러서 보여준다.
+            tab_report, tab_meeting = st.tabs(["📊 보고용", "📋 회의용"])
 
-        def _shift_selected_date(delta_days):
-            st.session_state["pr_selected_date"] += timedelta(days=delta_days)
+            with tab_report:
+                render_copy_button(target_id="rank-table-capture-report", button_id="copy-rank-btn-report")
+                snapshot_rows = build_snapshot_rows_html(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS)
+                report_groups = filter_groups_for_report(keyword_groups)
+                if report_groups:
+                    brand_rows = build_brand_rows_html(
+                        report_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
+                        add_top_border=not snapshot_rows,
+                    )
+                    render_rank_tables(snapshot_rows, brand_rows, container_id="rank-table-capture-report")
+                else:
+                    render_rank_tables(snapshot_rows, "", container_id="rank-table-capture-report")
+                    st.info("보고용으로 표시할 키워드가 없습니다.")
 
-        with st.container(key="pr_date_nav"):
-            col_prev, col_date, col_next, col_basis = st.columns([0.25, 1.15, 0.25, 2], vertical_alignment="top")
-            with col_prev:
-                st.button(
-                    "◀", key="pr_date_prev",
-                    on_click=_shift_selected_date, args=(-1,),
-                )
-            with col_date:
-                selected_date = st.date_input("조회할 날짜", key="pr_selected_date")
-            with col_next:
-                st.button(
-                    "▶", key="pr_date_next",
-                    on_click=_shift_selected_date, args=(1,),
-                    disabled=st.session_state["pr_selected_date"] >= datetime.now(KST).date(),
-                )
-            with col_basis:
-                compare_basis = st.radio(
-                    "비교 기준", ["전날 대비", "일주일 전 대비"], horizontal=True, key="pr_compare_basis"
-                )
-        previous_date = selected_date - timedelta(days=1 if compare_basis == "전날 대비" else 7)
-
-        # 이 두 표시는 모든 키워드에 일괄 적용하는 범용 기능이 아니라, 실무 보고서에서
-        # 실제로 그렇게 쓰이는 특정 키워드 텍스트에만 조건부로 바로 보이게 한다(펼치기 없음).
-        WEEKLY_SNAPSHOT_KEYWORDS = {"제주도 맛집"}
-        TOP10_KEYWORDS = {"함덕 맛집", "중문 맛집"}
-
-        keyword_groups = group_by_keyword(all_keywords)
-
-        # 보고용(캡처 공유용) / 회의용(전체 키워드) — 둘 다 같은 브랜드 병합 표 형식을
-        # 쓰고, 보고용은 is_report_keyword로 표시된 키워드만 걸러서 보여준다.
-        tab_report, tab_meeting = st.tabs(["📊 보고용", "📋 회의용"])
-
-        with tab_report:
-            render_copy_button(target_id="rank-table-capture-report", button_id="copy-rank-btn-report")
-            snapshot_rows = build_snapshot_rows_html(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS)
-            report_groups = filter_groups_for_report(keyword_groups)
-            if report_groups:
+            with tab_meeting:
+                snapshot_rows = build_snapshot_rows_html(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS)
                 brand_rows = build_brand_rows_html(
-                    report_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
+                    keyword_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
                     add_top_border=not snapshot_rows,
                 )
-                render_rank_tables(snapshot_rows, brand_rows, container_id="rank-table-capture-report")
-            else:
-                render_rank_tables(snapshot_rows, "", container_id="rank-table-capture-report")
-                st.info("보고용으로 표시할 키워드가 없습니다.")
+                render_rank_tables(snapshot_rows, brand_rows)
 
-        with tab_meeting:
-            snapshot_rows = build_snapshot_rows_html(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS)
-            brand_rows = build_brand_rows_html(
-                keyword_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
-                add_top_border=not snapshot_rows,
+with tab_manage:
+    if not st.session_state.get("is_admin"):
+        st.info("🔒 이 기능은 관리자 모드에서만 사용할 수 있습니다.")
+    else:
+        with st.container(border=True, key="section_add_keyword"):
+            st.markdown("#### 📝 추적 키워드 추가")
+
+            store_options = {s["store_name"]: s for s in stores}
+            selected_store = st.selectbox(
+                "매장 선택", options=list(store_options.keys()), key="pr_selected_store"
             )
-            render_rank_tables(snapshot_rows, brand_rows)
+            selected_store_row = store_options[selected_store]
+
+            if selected_store_row.get("naver_place_id"):
+                st.caption(f"네이버 플레이스 ID: {selected_store_row['naver_place_id']}")
+            else:
+                st.warning(
+                    "이 매장은 아직 네이버 플레이스 ID가 등록되지 않았습니다 — "
+                    "Supabase `store_campaigns` 테이블에서 `naver_place_id`를 입력해 주세요."
+                )
+
+            with st.form("add_place_keyword_form", clear_on_submit=True):
+                new_keyword = st.text_input("키워드", placeholder="예: 중문 흑돼지")
+                submitted = st.form_submit_button("키워드 추가")
+
+                if submitted:
+                    if not new_keyword.strip():
+                        st.warning("키워드를 입력해 주세요.")
+                    else:
+                        # 같은 매장 안에서만 순서를 매기면, 그룹 재정렬(swap_keyword_group_order)로
+                        # display_order가 이미 전체 기준으로 다시 매겨진 뒤라 새 키워드가 목록
+                        # 중간에 끼어들 수 있다. 전체 최댓값 기준으로 매겨서 항상 맨 아래(새
+                        # 그룹)로 추가되게 한다.
+                        next_order = max([k.get("display_order") or 0 for k in all_keywords], default=0) + 1
+                        try:
+                            get_supabase_client().table("place_rank_keywords").insert({
+                                "store_id": selected_store_row["id"],
+                                "keyword": new_keyword.strip(),
+                                "display_order": next_order,
+                            }).execute()
+                            fetch_all_keywords.clear()
+                            st.success(f"'{selected_store}'에 '{new_keyword.strip()}' 키워드가 추가되었습니다.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ 키워드 추가 중 오류가 발생했습니다: {e}")
+
+        with st.container(border=True, key="section_manage_keywords"):
+            st.markdown("#### 📋 추적 키워드 목록")
+
+            if not keyword_groups:
+                st.info("추적 중인 키워드가 없습니다. 위에서 먼저 추가해 주세요.")
+            else:
+                for group_idx, (keyword_text, rows) in enumerate(keyword_groups):
+                    with st.container(border=True, key=f"pr_kwgroup_{group_idx}"):
+                        col_title, col_order = st.columns([9, 1], vertical_alignment="center")
+                        with col_title:
+                            st.markdown(f"**{keyword_text}**")
+                        with col_order:
+                            with st.container(key=f"actions_prkwgroup_{group_idx}"):
+                                if st.button(
+                                    ":material/arrow_upward:", key=f"up_pr_kwgroup_{group_idx}",
+                                    disabled=(group_idx == 0),
+                                ):
+                                    swap_keyword_group_order(keyword_groups, group_idx, group_idx - 1)
+                                    fetch_all_keywords.clear()
+                                    st.rerun()
+                                if st.button(
+                                    ":material/arrow_downward:", key=f"down_pr_kwgroup_{group_idx}",
+                                    disabled=(group_idx == len(keyword_groups) - 1),
+                                ):
+                                    swap_keyword_group_order(keyword_groups, group_idx, group_idx + 1)
+                                    fetch_all_keywords.clear()
+                                    st.rerun()
+
+                        for kw in rows:
+                            store_name = (kw.get("store_campaigns") or {}).get("store_name", "")
+                            with st.container(key=f"pr_kwrow_{kw['id']}"):
+                                col_name, col_report, col_delete = st.columns([10, 5, 2], vertical_alignment="center")
+                                with col_name:
+                                    st.markdown(f'<span class="rank-kw">{store_name}</span>', unsafe_allow_html=True)
+                                with col_report:
+                                    chk_key = f"report_chk_{kw['id']}"
+                                    st.checkbox(
+                                        "보고용 포함",
+                                        value=bool(kw.get("is_report_keyword")),
+                                        key=chk_key,
+                                        on_change=_toggle_report_keyword,
+                                        args=(chk_key, kw["id"]),
+                                    )
+                                with col_delete:
+                                    # 완전 삭제(DELETE)하면 place_rank_checks가 ON DELETE CASCADE라
+                                    # 그동안 쌓인 체크 이력까지 같이 사라진다. 대신 비활성화만 해서
+                                    # 목록/자동 체크에서는 빠지되 이력은 그대로 보존한다.
+                                    if st.button("-", key=f"kwdel_{kw['id']}"):
+                                        get_supabase_client().table("place_rank_keywords").update(
+                                            {"is_active": False}
+                                        ).eq("id", kw["id"]).execute()
+                                        fetch_all_keywords.clear()
+                                        st.rerun()
