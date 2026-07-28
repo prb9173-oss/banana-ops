@@ -82,6 +82,18 @@ def filter_groups_for_report(keyword_groups):
     return filtered
 
 
+def filter_groups_for_meeting(keyword_groups):
+    """회의용 표에는 is_meeting_keyword=True로 표시된 매장 행만 남긴다.
+    이 컬럼은 기본값이 true라서(모두 회의용에 나옴), 특정 키워드만 회의에서
+    굳이 안 다뤄도 될 때 개별적으로 체크를 해제해서 빼는 용도다."""
+    filtered = []
+    for keyword_text, rows in keyword_groups:
+        meeting_rows = [r for r in rows if r.get("is_meeting_keyword", True)]
+        if meeting_rows:
+            filtered.append((keyword_text, meeting_rows))
+    return filtered
+
+
 # 표 전체에서 쓰는 선/배경 색 — 한 곳에서만 정의해서 "어떤 선은 굵고 어떤 선은 얇은"
 # 불일치가 다시 생기지 않게 한다. 브랜드 구분은 왼쪽 병합 셀(배경색+굵은 글씨)만으로
 # 표시하고, 그 외 내용 칸은 항상 흰 배경으로 통일한다.
@@ -335,6 +347,13 @@ def _toggle_report_keyword(checkbox_key, keyword_id):
     fetch_all_keywords.clear()
 
 
+def _toggle_meeting_keyword(checkbox_key, keyword_id):
+    get_supabase_client().table("place_rank_keywords").update(
+        {"is_meeting_keyword": st.session_state[checkbox_key]}
+    ).eq("id", keyword_id).execute()
+    fetch_all_keywords.clear()
+
+
 def format_checked_at(checked_at):
     """서버가 어느 타임존에서 돌든(Streamlit Cloud는 UTC) 항상 한국 시간 기준으로
     보이도록 시스템 로컬 타임존(astimezone())이 아니라 Asia/Seoul로 명시 변환한다."""
@@ -490,11 +509,16 @@ with tab_view:
 
             with tab_meeting:
                 snapshot_rows = build_snapshot_rows_html(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS)
-                brand_rows = build_brand_rows_html(
-                    keyword_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
-                    add_top_border=not snapshot_rows,
-                )
-                render_rank_tables(snapshot_rows, brand_rows)
+                meeting_groups = filter_groups_for_meeting(keyword_groups)
+                if meeting_groups:
+                    brand_rows = build_brand_rows_html(
+                        meeting_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
+                        add_top_border=not snapshot_rows,
+                    )
+                    render_rank_tables(snapshot_rows, brand_rows)
+                else:
+                    render_rank_tables(snapshot_rows, "")
+                    st.info("회의용으로 표시할 키워드가 없습니다.")
 
 with tab_manage:
     if not st.session_state.get("is_admin"):
@@ -573,17 +597,26 @@ with tab_manage:
                         for kw in rows:
                             store_name = (kw.get("store_campaigns") or {}).get("store_name", "")
                             with st.container(key=f"pr_kwrow_{kw['id']}"):
-                                col_name, col_report, col_delete = st.columns([10, 5, 2], vertical_alignment="center")
+                                col_name, col_report, col_meeting, col_delete = st.columns([8, 4, 4, 2], vertical_alignment="center")
                                 with col_name:
                                     st.markdown(f'<span class="rank-kw">{store_name}</span>', unsafe_allow_html=True)
                                 with col_report:
-                                    chk_key = f"report_chk_{kw['id']}"
+                                    report_chk_key = f"report_chk_{kw['id']}"
                                     st.checkbox(
                                         "보고용 포함",
                                         value=bool(kw.get("is_report_keyword")),
-                                        key=chk_key,
+                                        key=report_chk_key,
                                         on_change=_toggle_report_keyword,
-                                        args=(chk_key, kw["id"]),
+                                        args=(report_chk_key, kw["id"]),
+                                    )
+                                with col_meeting:
+                                    meeting_chk_key = f"meeting_chk_{kw['id']}"
+                                    st.checkbox(
+                                        "회의용 포함",
+                                        value=kw.get("is_meeting_keyword", True),
+                                        key=meeting_chk_key,
+                                        on_change=_toggle_meeting_keyword,
+                                        args=(meeting_chk_key, kw["id"]),
                                     )
                                 with col_delete:
                                     # 완전 삭제(DELETE)하면 place_rank_checks가 ON DELETE CASCADE라
