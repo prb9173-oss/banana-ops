@@ -440,6 +440,45 @@ st.markdown(f"""
         margin-bottom: 6px;
     }}
 
+    /* 플레이스 순위 "보고용" 탭 전용 복사 버튼: 탭 목록(회의용/보고용 라벨)과 같은
+       줄의 우측 끝에 겹쳐 보이도록 stTabs 컨테이너를 기준으로 절대 위치를 준다.
+       버튼 자체는 보고용 탭 콘텐츠 안에서 렌더링되므로, 탭이 st.tabs 표준 동작으로
+       숨겨지면(회의용 선택 시) 이 버튼도 같이 숨겨진다 — 별도 조건 분기가 필요 없다. */
+    div[data-testid="stTabs"] {{
+        position: relative;
+    }}
+    /* Streamlit이 st.markdown 하나마다 감싸는 stElementContainer에 기본으로
+       position:relative를 걸어두는데, 이게 stTabs보다 버튼에 더 가까운 조상이라
+       버튼이 탭 줄이 아니라 자기 자신의 좁은 박스 기준으로 위치잡혀 버린다 —
+       복사 버튼을 담은 그 wrapper만 콕 집어 static으로 되돌려서, absolute
+       위치 기준이 진짜로 stTabs까지 올라가게 한다. */
+    div[data-testid="stElementContainer"]:has(.rank-copy-btn-wrap) {{
+        position: static !important;
+    }}
+    .rank-copy-btn-wrap {{
+        position: absolute;
+        top: 0;
+        right: 0;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        z-index: 10;
+    }}
+    .rank-copy-btn {{
+        background-color: #FFFFFF;
+        border: 1px solid {BORDER};
+        border-radius: 8px;
+        padding: 5px 14px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: {PRIMARY};
+        cursor: pointer;
+        box-shadow: 0 1px 2px rgba(16,24,40,0.04);
+    }}
+    .rank-copy-btn:hover {{
+        background-color: #F4F6F9;
+    }}
+
     /* ---- 사이드바 폭 / 내비게이션 항목 크기 조정 ---- */
     section[data-testid="stSidebar"] {{
         width: 250px !important;

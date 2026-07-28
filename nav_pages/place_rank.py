@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import streamlit as st
+import streamlit.components.v1 as components
 from supabase import create_client
 
 KST = ZoneInfo("Asia/Seoul")
@@ -190,24 +191,113 @@ def build_brand_rows_html(groups, checks_by_keyword, selected_date, previous_dat
     return rows_html
 
 
-def render_rank_tables(snapshot_rows_html, brand_rows_html):
+def render_rank_tables(snapshot_rows_html, brand_rows_html, container_id=None):
     """3주 스냅샷 + 브랜드 표를 하나의 <table> 안에 이어붙여서 렌더링한다 — 표를
     두 개로 나누면(별도 <table> 태그) 그 사이에 브라우저가 여백을 넣어 두 표가
     분리돼 보이므로, 반드시 하나의 <table> 태그 안에서 합쳐야 한다.
     이 표를 감싸는 st.container(section_rank_results)가 이미 카드(테두리+패딩)라
     표 자체에는 별도 테두리 박스를 씌우지 않는다 — 카드 안에 카드가 겹치면
-    아래쪽에 불필요한 빈 공간만 늘어난다."""
+    아래쪽에 불필요한 빈 공간만 늘어난다.
+    container_id를 주면 표를 그 id의 <div>로 감싼다 — "복사하기" 버튼이 캡처할
+    대상을 정확히 지목하기 위한 용도(회의용 표까지 같이 잡히지 않도록)."""
     inner = snapshot_rows_html + brand_rows_html
     if not inner:
         return
-    st.markdown(
+    table_html = (
         # 표를 매번 카드(브라우저) 전체 폭까지 늘리면 실제 글자 내용은 얼마 안 되는데
         # 넓은 모니터에서 옆으로 크게 늘어나 버려서, 한 화면에 캡처하려고 축소하면
         # 여백만 같이 줄고 글자만 작아지는 문제가 있었다 — max-width로 내용에 맞는
         # 고정폭을 둬서 캡처하기 좋은 비율(옛 엑셀 보고서와 비슷한 폭)로 맞춘다.
         f'<table style="width:100%; max-width:960px; border-collapse:collapse; font-size:13px; '
-        f'color:#16181D; border:1px solid {TABLE_BORDER};">{inner}</table>',
+        f'color:#16181D; border:1px solid {TABLE_BORDER};">{inner}</table>'
+    )
+    if container_id:
+        # 표(<table>)의 테두리가 이 div의 바깥 경계선에 딱 붙어 있으면, html2canvas가
+        # 캡처 경계를 계산할 때 그 1px 테두리 줄까지 함께 잘라버리는 경우가 있다.
+        # 여기에 테두리를 하나 더 그어서 이중으로 두껍게 만드는 대신(내부 격자선과
+        # 두께가 달라져 어색해 보였다), 흰 여백만 살짝 둬서 캡처 경계와 실제 테두리
+        # 사이에 여유를 준다 — 두께는 그대로 1px 유지.
+        table_html = (
+            f'<div id="{container_id}" style="background:#FFFFFF; padding:3px;">{table_html}</div>'
+        )
+    st.markdown(table_html, unsafe_allow_html=True)
+
+
+def render_copy_button(target_id, button_id):
+    """표를 이미지로 캡처해 클립보드에 바로 복사하는 버튼 + 스크립트.
+    st.markdown으로 넣은 <script>는 브라우저가 실행해주지 않으므로(innerHTML 삽입은
+    script 태그를 무시함), 보이지 않는 components.html 안에서 부모 문서에 진짜
+    <script> 엘리먼트를 만들어(createElement+appendChild) 주입한다 — 이렇게 만든
+    스크립트는 그 스크립트가 속한 문서(부모, 즉 메인 페이지)의 컨텍스트에서
+    실행되므로, html2canvas와 클립보드 API 모두 메인 페이지 기준으로 정상 동작한다.
+    버튼 클릭 이벤트는 document 레벨에서 위임 방식으로 잡아서, Streamlit이 매
+    rerun마다 버튼 DOM을 새로 그려도(엘리먼트 참조가 바뀌어도) 계속 동작하게 한다."""
+    st.markdown(
+        f'<div class="rank-copy-btn-wrap">'
+        f'<button id="{button_id}" type="button" class="rank-copy-btn">📋 복사하기</button>'
+        f'</div>',
         unsafe_allow_html=True,
+    )
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            var doc = window.parent.document;
+            if (doc.getElementById('rank-copy-injected-script')) return;
+            var s = doc.createElement('script');
+            s.id = 'rank-copy-injected-script';
+            s.text = `
+                (function() {{
+                    function ensureLib(cb) {{
+                        if (window.html2canvas) {{ cb(); return; }}
+                        var existing = document.getElementById('html2canvas-lib');
+                        if (existing) {{ existing.addEventListener('load', cb); return; }}
+                        var lib = document.createElement('script');
+                        lib.id = 'html2canvas-lib';
+                        lib.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                        lib.onload = cb;
+                        document.head.appendChild(lib);
+                    }}
+                    document.addEventListener('click', function(e) {{
+                        var btn = e.target.closest('#{button_id}');
+                        if (!btn) return;
+                        var original = btn.innerText;
+                        ensureLib(function() {{
+                            var target = document.getElementById('{target_id}');
+                            if (!target) return;
+                            btn.innerText = '캡처 중...';
+                            // 폰트가 늦게 로드되면 그사이 셀 너비가 바뀌면서 캡처 시점에
+                            // 표 오른쪽 테두리가 잘리는 경우가 있어, 폰트 로딩이 끝난
+                            // 뒤에 캡처하도록 기다린다.
+                            document.fonts.ready.then(function() {{
+                            window.html2canvas(target, {{backgroundColor: '#ffffff', scale: 2}}).then(function(canvas) {{
+                                canvas.toBlob(function(blob) {{
+                                    navigator.clipboard.write([
+                                        new ClipboardItem({{'image/png': blob}})
+                                    ]).then(function() {{
+                                        btn.innerText = '복사 완료!';
+                                        setTimeout(function() {{ btn.innerText = original; }}, 1500);
+                                    }}).catch(function(err) {{
+                                        btn.innerText = '복사 실패';
+                                        console.error(err);
+                                        setTimeout(function() {{ btn.innerText = original; }}, 1500);
+                                    }});
+                                }});
+                            }}).catch(function(err) {{
+                                btn.innerText = '캡처 실패';
+                                console.error(err);
+                                setTimeout(function() {{ btn.innerText = original; }}, 1500);
+                            }});
+                            }});
+                        }});
+                    }});
+                }})();
+            `;
+            doc.body.appendChild(s);
+        }})();
+        </script>
+        """,
+        height=0,
     )
 
 
@@ -422,6 +512,7 @@ with st.container(border=True, key="section_rank_results"):
         tab_report, tab_meeting = st.tabs(["📊 보고용", "📋 회의용"])
 
         with tab_report:
+            render_copy_button(target_id="rank-table-capture-report", button_id="copy-rank-btn-report")
             snapshot_rows = build_snapshot_rows_html(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS)
             report_groups = filter_groups_for_report(keyword_groups)
             if report_groups:
@@ -429,9 +520,9 @@ with st.container(border=True, key="section_rank_results"):
                     report_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
                     add_top_border=not snapshot_rows,
                 )
-                render_rank_tables(snapshot_rows, brand_rows)
+                render_rank_tables(snapshot_rows, brand_rows, container_id="rank-table-capture-report")
             else:
-                render_rank_tables(snapshot_rows, "")
+                render_rank_tables(snapshot_rows, "", container_id="rank-table-capture-report")
                 st.info("보고용으로 표시할 키워드가 없습니다.")
 
         with tab_meeting:
