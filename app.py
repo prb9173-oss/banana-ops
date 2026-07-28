@@ -509,29 +509,48 @@ pg = st.navigation(pages)
 # ==========================================
 # [관리자 모드] 조회는 누구나, 실제 데이터를 바꾸는 버튼/폼만 각 페이지에서
 # st.session_state.get("is_admin")로 가려서 관리자만 쓰게 한다.
+#
+# 원래는 브라우저 쿠키(document.cookie + st.context.cookies)로 로그인 상태를
+# 남겼는데, 배포 환경(Streamlit Cloud)에서 쿠키는 분명히 브라우저에 저장되는데도
+# (개발자도구로 확인함) 서버가 재접속 시 그 쿠키를 못 읽는 문제가 실측 확인됐다 —
+# 아마 배포 인프라가 웹소켓 재연결 시 쿠키 헤더를 그대로 안 넘겨주는 것으로 추정
+# (원인 100% 특정은 못 함). 그래서 서버가 "무조건 확실하게" 받는 값인 URL 쿼리
+# 파라미터로 방식을 바꿨다: 로그인하면 URL에 ?admin=1을 붙이고, 그 값은
+# st.query_params로 어떤 배포 환경에서도 항상 정확히 읽힌다. 다음에 다시 열었을 때도
+# 유지되도록, 그 쿼리 파라미터가 붙는 순간 브라우저 localStorage에도 같이 기록해두고,
+# 페이지를 열 때마다(쿼리 파라미터가 아직 없으면) localStorage를 확인해서 있으면
+# 쿼리 파라미터를 자동으로 붙여 새로고침하는 방식으로 "기억"을 흉내낸다.
 # ==========================================
-ADMIN_COOKIE_NAME = "banana_admin"
-ADMIN_COOKIE_VALUE = "1"
+ADMIN_QUERY_KEY = "admin"
+ADMIN_QUERY_VALUE = "1"
+ADMIN_LOCALSTORAGE_KEY = "banana_admin"
 
 
-def _set_admin_cookie(value):
-    """document.cookie를 부모 문서(메인 페이지)에 직접 심는다 — st.session_state는
-    새로고침/재방문 시 초기화되지만 쿠키는 브라우저에 남아있어서, 다음에 다시 열었을 때
-    비밀번호를 또 입력하지 않아도 자동으로 관리자 모드가 켜지게 하기 위함. 값이 빈
-    문자열이면 max-age=0으로 즉시 만료시켜 로그아웃 처리한다.
-    쿠키를 심은 직후 곧바로 페이지를 새로고침(location.reload)까지 이 스크립트 안에서
-    처리한다 — st.rerun()을 서버 쪽에서 따로 호출하면 그 rerun이 방금 그린 이 iframe을
-    스크립트가 실행되기도 전에 지워버릴 수 있어서(sleep으로 시간차를 줘봤지만 실제
-    환경에서 여전히 불안정했다), "쿠키 굽기 -> 새로고침"을 전부 브라우저 쪽 한 스크립트
-    안에서 순서대로 실행되게 만들어 타이밍 경쟁 자체를 없앤다."""
-    max_age = "7776000" if value else "0"  # 90일, 로그아웃 시 0
+def _set_admin_persisted(logged_in):
+    """localStorage에 로그인 상태를 남기고, URL의 admin 쿼리 파라미터를 그에 맞게
+    설정한 뒤 그 URL로 이동(replace)한다. 이동 자체가 곧 "새로고침 + 상태 반영"
+    역할을 하므로 별도의 st.rerun()이 필요 없다."""
+    if logged_in:
+        js_body = f"""
+            localStorage.setItem('{ADMIN_LOCALSTORAGE_KEY}', '{ADMIN_QUERY_VALUE}');
+            var url = new URL(window.location.href);
+            url.searchParams.set('{ADMIN_QUERY_KEY}', '{ADMIN_QUERY_VALUE}');
+            window.location.replace(url.toString());
+        """
+    else:
+        js_body = f"""
+            localStorage.removeItem('{ADMIN_LOCALSTORAGE_KEY}');
+            var url = new URL(window.location.href);
+            url.searchParams.delete('{ADMIN_QUERY_KEY}');
+            window.location.replace(url.toString());
+        """
     components.html(
         f"""
         <script>
         (function() {{
             var doc = window.parent.document;
             var s = doc.createElement('script');
-            s.text = "document.cookie = '{ADMIN_COOKIE_NAME}={value}; max-age={max_age}; path=/'; window.location.reload();";
+            s.text = `{js_body}`;
             doc.body.appendChild(s);
         }})();
         </script>
@@ -540,15 +559,35 @@ def _set_admin_cookie(value):
     )
 
 
-# "세션에 아직 값이 없을 때만 쿠키를 확인"하면 안 된다 — Streamlit은 브라우저를 그냥
-# 새로고침(F5)해도 세션(session_state)이 끊기지 않고 그대로 이어지는 경우가 있어서,
-# 로그인하기 전에 이미 is_admin=False가 세션에 박혀 있으면 로그인 성공 후 새로고침해도
-# "이미 값이 있으니" 쿠키를 다시 안 보고 예전 False를 계속 쓰는 문제가 있었다. 매 rerun마다
-# 쿠키가 있으면 무조건 반영하도록 바꿔서, 세션이 이어지든 새로 시작하든 항상 맞는 상태가 되게 한다.
-if st.context.cookies.get(ADMIN_COOKIE_NAME) == ADMIN_COOKIE_VALUE:
+if st.query_params.get(ADMIN_QUERY_KEY) == ADMIN_QUERY_VALUE:
     st.session_state["is_admin"] = True
 elif "is_admin" not in st.session_state:
     st.session_state["is_admin"] = False
+
+if not st.session_state["is_admin"]:
+    # 쿼리 파라미터가 없는 상태로 열렸을 때, 예전에 로그인해서 localStorage에 흔적이
+    # 남아있으면 쿼리 파라미터를 자동으로 붙여 새로고침해서 로그인 상태를 이어간다.
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            var doc = window.parent.document;
+            var s = doc.createElement('script');
+            s.text = `
+                if (localStorage.getItem('{ADMIN_LOCALSTORAGE_KEY}') === '{ADMIN_QUERY_VALUE}') {{
+                    var url = new URL(window.location.href);
+                    if (url.searchParams.get('{ADMIN_QUERY_KEY}') !== '{ADMIN_QUERY_VALUE}') {{
+                        url.searchParams.set('{ADMIN_QUERY_KEY}', '{ADMIN_QUERY_VALUE}');
+                        window.location.replace(url.toString());
+                    }}
+                }}
+            `;
+            doc.body.appendChild(s);
+        }})();
+        </script>
+        """,
+        height=0,
+    )
 
 
 @st.dialog("관리자 로그인")
@@ -563,7 +602,7 @@ def _admin_login_dialog():
         admin_secret = st.secrets.get("admin", {}).get("password")
         if pw and admin_secret and pw == admin_secret:
             st.session_state["is_admin"] = True
-            _set_admin_cookie(ADMIN_COOKIE_VALUE)
+            _set_admin_persisted(True)
             st.success("로그인되었습니다. 새로고침 중...")
         else:
             st.error("비밀번호가 올바르지 않습니다.")
@@ -584,7 +623,7 @@ with st.sidebar:
         )
         if st.button("로그아웃", key="admin_logout", width="stretch"):
             st.session_state["is_admin"] = False
-            _set_admin_cookie("")
+            _set_admin_persisted(False)
     else:
         if st.button("🔒 관리자 모드", key="admin_login_btn", width="stretch"):
             _admin_login_dialog()
