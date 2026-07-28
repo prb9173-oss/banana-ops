@@ -457,14 +457,13 @@ with tab_view:
                 if c and (not latest_checked_at or c["checked_at"] > latest_checked_at):
                     latest_checked_at = c["checked_at"]
 
-            if latest_checked_at:
-                st.caption(f"체크 시각: {format_checked_at(latest_checked_at)}")
-
             def _shift_selected_date(delta_days):
                 st.session_state["pr_selected_date"] += timedelta(days=delta_days)
 
             with st.container(key="pr_date_nav"):
-                col_prev, col_date, col_next, col_basis = st.columns([0.25, 1.15, 0.25, 2], vertical_alignment="top")
+                col_prev, col_date, col_next, col_basis, col_checked = st.columns(
+                    [0.25, 1.15, 0.25, 1.5, 1.5], vertical_alignment="top"
+                )
                 with col_prev:
                     st.button(
                         "◀", key="pr_date_prev",
@@ -482,6 +481,10 @@ with tab_view:
                     compare_basis = st.radio(
                         "비교 기준", ["전날 대비", "일주일 전 대비"], horizontal=True, key="pr_compare_basis"
                     )
+                with col_checked:
+                    if latest_checked_at:
+                        st.markdown("&nbsp;")  # 라디오 그룹의 레이블 줄 높이와 맞춰 같은 줄에 나란히 보이게
+                        st.caption(f"체크 시각: {format_checked_at(latest_checked_at)}")
             previous_date = selected_date - timedelta(days=1 if compare_basis == "전날 대비" else 7)
 
             # 이 두 표시는 모든 키워드에 일괄 적용하는 범용 기능이 아니라, 실무 보고서에서

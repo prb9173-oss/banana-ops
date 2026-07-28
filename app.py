@@ -543,16 +543,22 @@ if "is_admin" not in st.session_state:
 
 @st.dialog("관리자 로그인")
 def _admin_login_dialog():
-    pw = st.text_input("비밀번호", type="password", key="admin_pw_input")
-    if st.button("확인", key="admin_pw_submit"):
+    # 버튼 클릭 대신 st.form을 써서, 비밀번호 입력 후 엔터만 쳐도(폼 안 위젯에서 엔터 ==
+    # 폼의 기본 제출 버튼 클릭) 로그인되게 한다 — 매번 마우스로 "확인"을 눌러야 하는
+    # 불편함을 없앤다.
+    with st.form("admin_login_form"):
+        pw = st.text_input("비밀번호", type="password", key="admin_pw_input")
+        submitted = st.form_submit_button("확인")
+    if submitted:
         admin_secret = st.secrets.get("admin", {}).get("password")
         if pw and admin_secret and pw == admin_secret:
             st.session_state["is_admin"] = True
             _set_admin_cookie(ADMIN_COOKIE_VALUE)
             # components.html로 심은 스크립트가 브라우저에서 실제로 실행될 시간을 주지
             # 않고 바로 st.rerun()하면, 다음 rerun이 이 iframe을 지워버려 쿠키가 심어지기
-            # 전에 사라지는 경우가 있었다 — 잠깐 쉬어서 스크립트가 실행될 여유를 준다.
-            time.sleep(0.3)
+            # 전에 사라지는 경우가 실제 환경에서 있었다(0.3초로는 부족했음) — 넉넉히 쉬어서
+            # 스크립트가 실행될 여유를 준다.
+            time.sleep(1.0)
             st.rerun()
         else:
             st.error("비밀번호가 올바르지 않습니다.")
@@ -574,7 +580,7 @@ with st.sidebar:
         if st.button("로그아웃", key="admin_logout", width="stretch"):
             st.session_state["is_admin"] = False
             _set_admin_cookie("")
-            time.sleep(0.3)
+            time.sleep(1.0)
             st.rerun()
     else:
         if st.button("🔒 관리자 모드", key="admin_login_btn", width="stretch"):
