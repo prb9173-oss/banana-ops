@@ -145,12 +145,15 @@ def build_snapshot_rows_html(keyword_groups, checks_by_keyword, selected_date, w
     return rows_html
 
 
-def build_brand_rows_html(groups, checks_by_keyword, selected_date, previous_date, top10_keywords, add_top_border=False):
+def build_brand_rows_html(groups, checks_by_keyword, selected_date, previous_date, top_n_field, add_top_border=False):
     """실무 보고서와 동일한 브랜드 병합 표 — 회의용/보고용 둘 다 이 함수로 렌더링해서
     형식을 통일한다. build_snapshot_rows_html과 같은 <table> 안에 이어붙일 <tr>
     목록만 돌려준다. 순위/증감은 카드뷰와 같은 배지(pill) 스타일을 그대로 쓴다.
     add_top_border=True는 이 표 앞에 스냅샷 구역이 없어서 이 부분이 표의 맨 첫
-    행이 되는 경우(top border를 직접 그어줘야 함)를 위한 것."""
+    행이 되는 경우(top border를 직접 그어줘야 함)를 위한 것.
+    top_n_field는 "report_top_n" 또는 "meeting_top_n" — 같은 키워드라도 보고용/회의용
+    표에서 경쟁업체 목록 개수를 다르게 줄 수 있어서, 그룹의 대표 행(rows[0])에서
+    이 탭에 해당하는 컬럼 값을 읽어 그만큼만 보여준다."""
     brand_buckets = {}
     brand_order = []
     for keyword_text, rows in groups:
@@ -178,9 +181,10 @@ def build_brand_rows_html(groups, checks_by_keyword, selected_date, previous_dat
                     f'border-left:1px solid {TABLE_BORDER}; {top_border} white-space:nowrap;">{brand}</td>'
                 )
             title_top10_html = ""
-            if keyword_text in top10_keywords:
+            top_n = rows[0].get(top_n_field) or 0
+            if top_n > 0:
                 rep_check = find_check_for_date(checks_by_keyword.get(rows[0]["id"], []), selected_date)
-                title_top10_html = build_top10_html((rep_check or {}).get("top_places"))
+                title_top10_html = build_top10_html((rep_check or {}).get("top_places"), top_n)
 
             store_cells = []
             for kw in rows:
@@ -354,6 +358,22 @@ def _toggle_meeting_keyword(checkbox_key, keyword_id):
     fetch_all_keywords.clear()
 
 
+# 키워드 제목 옆 경쟁업체 목록 개수 — 실무에서 실제로 쓰는 값이 "안 보여줌 / Top 2 /
+# Top 10" 세 가지뿐이라 자유 입력 숫자칸 대신 선택형으로 제한한다.
+TOP_N_OPTIONS = [("표시 안 함", 0), ("Top 2", 2), ("Top 10", 10)]
+TOP_N_LABELS = [label for label, _ in TOP_N_OPTIONS]
+TOP_N_VALUE_TO_LABEL = {value: label for label, value in TOP_N_OPTIONS}
+TOP_N_LABEL_TO_VALUE = dict(TOP_N_OPTIONS)
+
+
+def _set_top_n(field_name, select_key, keyword_id):
+    value = TOP_N_LABEL_TO_VALUE[st.session_state[select_key]]
+    get_supabase_client().table("place_rank_keywords").update(
+        {field_name: value}
+    ).eq("id", keyword_id).execute()
+    fetch_all_keywords.clear()
+
+
 def format_checked_at(checked_at):
     """서버가 어느 타임존에서 돌든(Streamlit Cloud는 UTC) 항상 한국 시간 기준으로
     보이도록 시스템 로컬 타임존(astimezone())이 아니라 Asia/Seoul로 명시 변환한다."""
@@ -375,10 +395,10 @@ def find_check_for_date(checks, target_date):
     return None
 
 
-def build_top10_html(top_places):
-    if not top_places:
+def build_top10_html(top_places, top_n):
+    if not top_places or top_n <= 0:
         return ""
-    names = " ".join(f"{i}.{p.get('name', '')}" for i, p in enumerate(top_places[:10], start=1))
+    names = " ".join(f"{i}.{p.get('name', '')}" for i, p in enumerate(top_places[:top_n], start=1))
     return f' <span class="rank-top10">{names}</span>'
 
 
@@ -487,10 +507,11 @@ with tab_view:
                         st.caption(f"체크 시각: {format_checked_at(latest_checked_at)}")
             previous_date = selected_date - timedelta(days=1 if compare_basis == "전날 대비" else 7)
 
-            # 이 두 표시는 모든 키워드에 일괄 적용하는 범용 기능이 아니라, 실무 보고서에서
-            # 실제로 그렇게 쓰이는 특정 키워드 텍스트에만 조건부로 바로 보이게 한다(펼치기 없음).
+            # 이 스냅샷 표시는 모든 키워드에 일괄 적용하는 범용 기능이 아니라, 실무
+            # 보고서에서 실제로 그렇게 쓰이는 특정 키워드 텍스트에만 조건부로 바로
+            # 보이게 한다(펼치기 없음). 경쟁업체 Top N 표시는 키워드마다 하드코딩하지
+            # 않고 "추적 키워드 관리" 탭에서 report_top_n/meeting_top_n으로 개별 설정한다.
             WEEKLY_SNAPSHOT_KEYWORDS = {"제주도 맛집"}
-            TOP10_KEYWORDS = {"함덕 맛집", "중문 맛집"}
 
             # 보고용(캡처 공유용) / 회의용(전체 키워드) — 둘 다 같은 브랜드 병합 표 형식을
             # 쓰고, 보고용은 is_report_keyword로 표시된 키워드만 걸러서 보여준다.
@@ -502,7 +523,7 @@ with tab_view:
                 report_groups = filter_groups_for_report(keyword_groups)
                 if report_groups:
                     brand_rows = build_brand_rows_html(
-                        report_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
+                        report_groups, checks_by_keyword, selected_date, previous_date, "report_top_n",
                         add_top_border=not snapshot_rows,
                     )
                     render_rank_tables(snapshot_rows, brand_rows, container_id="rank-table-capture-report")
@@ -515,7 +536,7 @@ with tab_view:
                 meeting_groups = filter_groups_for_meeting(keyword_groups)
                 if meeting_groups:
                     brand_rows = build_brand_rows_html(
-                        meeting_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
+                        meeting_groups, checks_by_keyword, selected_date, previous_date, "meeting_top_n",
                         add_top_border=not snapshot_rows,
                     )
                     render_rank_tables(snapshot_rows, brand_rows)
@@ -612,6 +633,16 @@ with tab_manage:
                                         on_change=_toggle_report_keyword,
                                         args=(report_chk_key, kw["id"]),
                                     )
+                                    report_topn_key = f"report_topn_{kw['id']}"
+                                    st.selectbox(
+                                        "보고용 경쟁업체",
+                                        options=TOP_N_LABELS,
+                                        index=TOP_N_LABELS.index(TOP_N_VALUE_TO_LABEL.get(kw.get("report_top_n") or 0, "표시 안 함")),
+                                        key=report_topn_key,
+                                        label_visibility="collapsed",
+                                        on_change=_set_top_n,
+                                        args=("report_top_n", report_topn_key, kw["id"]),
+                                    )
                                 with col_meeting:
                                     meeting_chk_key = f"meeting_chk_{kw['id']}"
                                     st.checkbox(
@@ -620,6 +651,16 @@ with tab_manage:
                                         key=meeting_chk_key,
                                         on_change=_toggle_meeting_keyword,
                                         args=(meeting_chk_key, kw["id"]),
+                                    )
+                                    meeting_topn_key = f"meeting_topn_{kw['id']}"
+                                    st.selectbox(
+                                        "회의용 경쟁업체",
+                                        options=TOP_N_LABELS,
+                                        index=TOP_N_LABELS.index(TOP_N_VALUE_TO_LABEL.get(kw.get("meeting_top_n") or 0, "표시 안 함")),
+                                        key=meeting_topn_key,
+                                        label_visibility="collapsed",
+                                        on_change=_set_top_n,
+                                        args=("meeting_top_n", meeting_topn_key, kw["id"]),
                                     )
                                 with col_delete:
                                     # 완전 삭제(DELETE)하면 place_rank_checks가 ON DELETE CASCADE라
