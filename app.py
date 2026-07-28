@@ -1,4 +1,7 @@
+import time
+
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ==========================================
 # [내비게이션 셸] 사이드바 기능별 메뉴 + 카드형 콘텐츠 레이아웃
@@ -504,4 +507,77 @@ pages = [
 ]
 
 pg = st.navigation(pages)
+
+# ==========================================
+# [관리자 모드] 조회는 누구나, 실제 데이터를 바꾸는 버튼/폼만 각 페이지에서
+# st.session_state.get("is_admin")로 가려서 관리자만 쓰게 한다.
+# ==========================================
+ADMIN_COOKIE_NAME = "banana_admin"
+ADMIN_COOKIE_VALUE = "1"
+
+
+def _set_admin_cookie(value):
+    """document.cookie를 부모 문서(메인 페이지)에 직접 심는다 — st.session_state는
+    새로고침/재방문 시 초기화되지만 쿠키는 브라우저에 남아있어서, 다음에 다시 열었을 때
+    비밀번호를 또 입력하지 않아도 자동으로 관리자 모드가 켜지게 하기 위함. 값이 빈
+    문자열이면 max-age=0으로 즉시 만료시켜 로그아웃 처리한다."""
+    max_age = "7776000" if value else "0"  # 90일, 로그아웃 시 0
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            var doc = window.parent.document;
+            var s = doc.createElement('script');
+            s.text = "document.cookie = '{ADMIN_COOKIE_NAME}={value}; max-age={max_age}; path=/';";
+            doc.body.appendChild(s);
+        }})();
+        </script>
+        """,
+        height=0,
+    )
+
+
+if "is_admin" not in st.session_state:
+    st.session_state["is_admin"] = st.context.cookies.get(ADMIN_COOKIE_NAME) == ADMIN_COOKIE_VALUE
+
+
+@st.dialog("관리자 로그인")
+def _admin_login_dialog():
+    pw = st.text_input("비밀번호", type="password", key="admin_pw_input")
+    if st.button("확인", key="admin_pw_submit"):
+        admin_secret = st.secrets.get("admin", {}).get("password")
+        if pw and admin_secret and pw == admin_secret:
+            st.session_state["is_admin"] = True
+            _set_admin_cookie(ADMIN_COOKIE_VALUE)
+            # components.html로 심은 스크립트가 브라우저에서 실제로 실행될 시간을 주지
+            # 않고 바로 st.rerun()하면, 다음 rerun이 이 iframe을 지워버려 쿠키가 심어지기
+            # 전에 사라지는 경우가 있었다 — 잠깐 쉬어서 스크립트가 실행될 여유를 준다.
+            time.sleep(0.3)
+            st.rerun()
+        else:
+            st.error("비밀번호가 올바르지 않습니다.")
+
+
+# pg.run() 앞에 둬야 한다 — data_extractor.py 등 일부 페이지가 특정 상태에서
+# st.stop()을 호출하는데, st.stop()은 (그 페이지만이 아니라) app.py 스크립트
+# 실행 자체를 그 자리에서 완전히 멈춰버린다. pg.run() 뒤에 두면 그런 페이지에서는
+# 이 블록이 아예 렌더링되지 않아 관리자 버튼이 사라지는 문제가 있었다 — 대신 항상
+# 내비게이션 링크 바로 아래(페이지별로 사이드바에 뭔가 더 추가하지 않는 한 사실상
+# 맨 아래)에 고정해 어느 페이지에서도 항상 보이게 한다.
+with st.sidebar:
+    st.divider()
+    if st.session_state["is_admin"]:
+        st.markdown(
+            '<div style="margin-bottom:8px;"><span class="status-pill pill-kw-on">🔓 관리자 모드</span></div>',
+            unsafe_allow_html=True,
+        )
+        if st.button("로그아웃", key="admin_logout", width="stretch"):
+            st.session_state["is_admin"] = False
+            _set_admin_cookie("")
+            time.sleep(0.3)
+            st.rerun()
+    else:
+        if st.button("🔒 관리자 모드", key="admin_login_btn", width="stretch"):
+            _admin_login_dialog()
+
 pg.run()

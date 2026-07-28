@@ -674,8 +674,6 @@ def fetch_keyword_stats(customer_id, api_key, secret_key, adgroup_id, start_date
         return None
 
 
-st.sidebar.markdown("### 📁 광고 계정 선택")
-
 available_accounts = []
 try:
     for k in st.secrets.keys():
@@ -706,22 +704,23 @@ if 'selected_profile' not in st.session_state:
     st.session_state['selected_profile'] = "광고 ID 선택"
     update_inputs_from_profile()
 
-selected_profile = st.sidebar.selectbox(
-    "조회할 광고 계정을 선택해 주세요.",
-    options=options_list,
-    key='selected_profile',
-    on_change=update_inputs_from_profile
-)
+st.subheader("광고 데이터 추출기")
+
+with st.container(border=True, key="section_account_select"):
+    st.markdown("#### 📁 광고 계정 선택")
+    selected_profile = st.selectbox(
+        "조회할 광고 계정을 선택해 주세요.",
+        options=options_list,
+        key='selected_profile',
+        on_change=update_inputs_from_profile
+    )
 
 input_customer_id = st.session_state.get('input_customer_id', '')
 input_api_key = st.session_state.get('input_api_key', '')
 input_secret_key = st.session_state.get('input_secret_key', '')
 
-
-st.subheader("광고 데이터 추출기")
-
 if selected_profile == "광고 ID 선택" or not selected_profile:
-    st.info("👈 왼쪽 사이드바에서 조회 및 제어할 광고 ID(계정)를 먼저 선택해 주세요.")
+    st.info("👆 위에서 조회 및 제어할 광고 ID(계정)를 먼저 선택해 주세요.")
     st.stop()
 
 is_test_mode = ("mock" in str(input_customer_id).lower()) or (input_customer_id == "")
