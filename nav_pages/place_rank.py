@@ -201,8 +201,12 @@ def render_rank_tables(snapshot_rows_html, brand_rows_html):
     if not inner:
         return
     st.markdown(
-        f'<table style="width:100%; border-collapse:collapse; font-size:13px; color:#16181D; '
-        f'border:1px solid {TABLE_BORDER};">{inner}</table>',
+        # 표를 매번 카드(브라우저) 전체 폭까지 늘리면 실제 글자 내용은 얼마 안 되는데
+        # 넓은 모니터에서 옆으로 크게 늘어나 버려서, 한 화면에 캡처하려고 축소하면
+        # 여백만 같이 줄고 글자만 작아지는 문제가 있었다 — max-width로 내용에 맞는
+        # 고정폭을 둬서 캡처하기 좋은 비율(옛 엑셀 보고서와 비슷한 폭)로 맞춘다.
+        f'<table style="width:100%; max-width:960px; border-collapse:collapse; font-size:13px; '
+        f'color:#16181D; border:1px solid {TABLE_BORDER};">{inner}</table>',
         unsafe_allow_html=True,
     )
 
