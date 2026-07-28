@@ -540,8 +540,15 @@ def _set_admin_cookie(value):
     )
 
 
-if "is_admin" not in st.session_state:
-    st.session_state["is_admin"] = st.context.cookies.get(ADMIN_COOKIE_NAME) == ADMIN_COOKIE_VALUE
+# "세션에 아직 값이 없을 때만 쿠키를 확인"하면 안 된다 — Streamlit은 브라우저를 그냥
+# 새로고침(F5)해도 세션(session_state)이 끊기지 않고 그대로 이어지는 경우가 있어서,
+# 로그인하기 전에 이미 is_admin=False가 세션에 박혀 있으면 로그인 성공 후 새로고침해도
+# "이미 값이 있으니" 쿠키를 다시 안 보고 예전 False를 계속 쓰는 문제가 있었다. 매 rerun마다
+# 쿠키가 있으면 무조건 반영하도록 바꿔서, 세션이 이어지든 새로 시작하든 항상 맞는 상태가 되게 한다.
+if st.context.cookies.get(ADMIN_COOKIE_NAME) == ADMIN_COOKIE_VALUE:
+    st.session_state["is_admin"] = True
+elif "is_admin" not in st.session_state:
+    st.session_state["is_admin"] = False
 
 
 @st.dialog("관리자 로그인")
