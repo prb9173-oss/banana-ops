@@ -70,6 +70,98 @@ def group_by_keyword(keyword_rows):
     return [(kw, groups[kw]) for kw in order]
 
 
+def filter_groups_for_report(keyword_groups):
+    """보고용 표에는 is_report_keyword=True로 표시된 매장 행만 남긴다.
+    그룹 안의 모든 행이 걸러지면 그 키워드 그룹 자체를 표에서 뺀다."""
+    filtered = []
+    for keyword_text, rows in keyword_groups:
+        report_rows = [r for r in rows if r.get("is_report_keyword")]
+        if report_rows:
+            filtered.append((keyword_text, report_rows))
+    return filtered
+
+
+def build_brand_table_html(groups, checks_by_keyword, selected_date, previous_date, top10_keywords):
+    """실무 보고서와 동일한 브랜드 병합 표 — 회의용/보고용 둘 다 이 함수로 렌더링해서
+    형식을 통일한다. 순위/증감은 카드뷰와 같은 배지(pill) 스타일을 그대로 쓴다."""
+    brand_buckets = {}
+    brand_order = []
+    for keyword_text, rows in groups:
+        brand = get_brand((rows[0].get("store_campaigns") or {}).get("store_name", ""))
+        if brand not in brand_buckets:
+            brand_buckets[brand] = []
+            brand_order.append(brand)
+        brand_buckets[brand].append((keyword_text, rows))
+
+    table_html = '<table style="width:100%; border-collapse:collapse; font-size:13px; color:#16181D;">'
+    for brand in brand_order:
+        brand_groups = brand_buckets[brand]
+        for i, (keyword_text, rows) in enumerate(brand_groups):
+            table_html += '<tr style="border-bottom:1px solid #E3E6EB;">'
+            if i == 0:
+                table_html += (
+                    f'<td rowspan="{len(brand_groups)}" style="background:#EEF3FA; '
+                    f'font-weight:700; padding:10px; vertical-align:top; '
+                    f'border-right:1px solid #E3E6EB; white-space:nowrap;">{brand}</td>'
+                )
+            title_top10_html = ""
+            if keyword_text in top10_keywords:
+                rep_check = find_check_for_date(checks_by_keyword.get(rows[0]["id"], []), selected_date)
+                title_top10_html = build_top10_html((rep_check or {}).get("top_places"))
+            table_html += (
+                f'<td style="padding:8px 10px; font-weight:600; vertical-align:top; max-width:160px;">'
+                f'<span style="white-space:nowrap;">{keyword_text}</span>{title_top10_html}</td>'
+            )
+
+            store_cells = []
+            for kw in rows:
+                store_name = (kw.get("store_campaigns") or {}).get("store_name", "")
+                checks = checks_by_keyword.get(kw["id"], [])
+                selected_check = find_check_for_date(checks, selected_date)
+                previous_check = find_check_for_date(checks, previous_date)
+                store_cells.append(build_rank_info_html(store_name, kw, selected_check, previous_check))
+            table_html += f'<td style="padding:8px 10px;">{"".join(store_cells)}</td>'
+            table_html += '</tr>'
+    table_html += '</table>'
+    return table_html
+
+
+def render_weekly_snapshot_section(keyword_groups, checks_by_keyword, selected_date, weekly_snapshot_keywords, key_prefix):
+    for snap_idx, (keyword_text, rows) in enumerate(keyword_groups):
+        if keyword_text not in weekly_snapshot_keywords:
+            continue
+        with st.container(border=True, key=f"pr_snapshot_{key_prefix}_{snap_idx}"):
+            st.markdown(f"**{keyword_text}** — 최근 3주")
+            rep_checks = checks_by_keyword.get(rows[0]["id"], [])
+            with st.container(key=f"pr_snapshot_weeks_{key_prefix}_{snap_idx}"):
+                snap_cols = st.columns(3, vertical_alignment="top")
+                for i, weeks_back in enumerate([2, 1, 0]):
+                    snap_date = selected_date - timedelta(days=7 * weeks_back)
+                    snap_check = find_check_for_date(rep_checks, snap_date)
+                    with snap_cols[i]:
+                        st.markdown(f"**{snap_date.strftime('%m/%d')}**")
+                        snap_places = (snap_check or {}).get("top_places")
+                        if snap_places:
+                            top14 = snap_places[:14]
+                            half = (len(top14) + 1) // 2
+                            left_col, right_col = st.columns(2)
+                            with left_col:
+                                for j, p in enumerate(top14[:half], start=1):
+                                    st.markdown(f'<div class="rank-snapshot-item">{j}. {p.get("name", "")}</div>', unsafe_allow_html=True)
+                            with right_col:
+                                for j, p in enumerate(top14[half:], start=half + 1):
+                                    st.markdown(f'<div class="rank-snapshot-item">{j}. {p.get("name", "")}</div>', unsafe_allow_html=True)
+                        else:
+                            st.caption("데이터 없음")
+
+
+def get_brand(store_name):
+    """매장명 앞부분을 브랜드로 쓴다 (예: '고집돌우럭 중문점' -> '고집돌우럭').
+    store_campaigns에 별도 브랜드 필드가 없어서, 지금 등록된 매장명 규칙(브랜드+공백+지점명)에
+    맞춰 이렇게 파생한다."""
+    return store_name.split(" ")[0] if store_name else "기타"
+
+
 def swap_keyword_group_order(keyword_groups, idx_a, idx_b):
     """키워드 그룹(카드) 두 개의 표시 순서를 통째로 맞바꾼다. place_rank_keywords의
     display_order는 원래 매장별로 독립적이었는데, 여기서는 '그룹을 순서대로 쭉 이어
@@ -269,81 +361,24 @@ with st.container(border=True, key="section_rank_results"):
 
         keyword_groups = group_by_keyword(all_keywords)
 
-        # 실무 보고서와 동일하게, 제주도 맛집의 3주 스냅샷은 매장별 순위 카드들과 섞지 않고
-        # 최상단에 별도 구역으로 분리한다.
-        for snap_idx, (keyword_text, rows) in enumerate(keyword_groups):
-            if keyword_text not in WEEKLY_SNAPSHOT_KEYWORDS:
-                continue
-            with st.container(border=True, key=f"pr_snapshot_{snap_idx}"):
-                st.markdown(f"**{keyword_text}** — 최근 3주")
-                rep_checks = checks_by_keyword.get(rows[0]["id"], [])
-                with st.container(key=f"pr_snapshot_weeks_{snap_idx}"):
-                    snap_cols = st.columns(3, vertical_alignment="top")
-                    for i, weeks_back in enumerate([2, 1, 0]):
-                        snap_date = selected_date - timedelta(days=7 * weeks_back)
-                        snap_check = find_check_for_date(rep_checks, snap_date)
-                        with snap_cols[i]:
-                            st.markdown(f"**{snap_date.strftime('%m/%d')}**")
-                            snap_places = (snap_check or {}).get("top_places")
-                            if snap_places:
-                                top14 = snap_places[:14]
-                                half = (len(top14) + 1) // 2
-                                left_col, right_col = st.columns(2)
-                                with left_col:
-                                    for j, p in enumerate(top14[:half], start=1):
-                                        st.markdown(f'<div class="rank-snapshot-item">{j}. {p.get("name", "")}</div>', unsafe_allow_html=True)
-                                with right_col:
-                                    for j, p in enumerate(top14[half:], start=half + 1):
-                                        st.markdown(f'<div class="rank-snapshot-item">{j}. {p.get("name", "")}</div>', unsafe_allow_html=True)
-                            else:
-                                st.caption("데이터 없음")
+        # 보고용(캡처 공유용) / 회의용(전체 키워드) — 둘 다 같은 브랜드 병합 표 형식을
+        # 쓰고, 보고용은 is_report_keyword로 표시된 키워드만 걸러서 보여준다.
+        tab_report, tab_meeting = st.tabs(["📊 보고용", "📋 회의용"])
 
-        for group_idx, (keyword_text, rows) in enumerate(keyword_groups):
-            with st.container(border=True, key=f"pr_kwgroup_{group_idx}"):
-                col_title, col_order = st.columns([9, 1], vertical_alignment="center")
-                with col_title:
-                    title_top10_html = ""
-                    if keyword_text in TOP10_KEYWORDS:
-                        rep_check = find_check_for_date(checks_by_keyword.get(rows[0]["id"], []), selected_date)
-                        title_top10_html = build_top10_html((rep_check or {}).get("top_places"))
-                    st.markdown(f"**{keyword_text}**{title_top10_html}", unsafe_allow_html=True)
-                with col_order:
-                    with st.container(key=f"actions_prkwgroup_{group_idx}"):
-                        if st.button(
-                            ":material/arrow_upward:", key=f"up_pr_kwgroup_{group_idx}",
-                            disabled=(group_idx == 0),
-                        ):
-                            swap_keyword_group_order(keyword_groups, group_idx, group_idx - 1)
-                            fetch_all_keywords.clear()
-                            st.rerun()
-                        if st.button(
-                            ":material/arrow_downward:", key=f"down_pr_kwgroup_{group_idx}",
-                            disabled=(group_idx == len(keyword_groups) - 1),
-                        ):
-                            swap_keyword_group_order(keyword_groups, group_idx, group_idx + 1)
-                            fetch_all_keywords.clear()
-                            st.rerun()
+        with tab_report:
+            render_weekly_snapshot_section(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS, "rep")
+            report_groups = filter_groups_for_report(keyword_groups)
+            if report_groups:
+                st.markdown(
+                    build_brand_table_html(report_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS),
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.info("보고용으로 표시할 키워드가 없습니다.")
 
-                for kw in rows:
-                    store_name = (kw.get("store_campaigns") or {}).get("store_name", "")
-                    checks = checks_by_keyword.get(kw["id"], [])
-                    selected_check = find_check_for_date(checks, selected_date)
-                    previous_check = find_check_for_date(checks, previous_date)
-
-                    with st.container(key=f"pr_kwrow_{kw['id']}"):
-                        col_info, col_delete = st.columns([20, 1], vertical_alignment="center")
-                        with col_info:
-                            st.markdown(
-                                build_rank_info_html(store_name, kw, selected_check, previous_check),
-                                unsafe_allow_html=True,
-                            )
-                        with col_delete:
-                            # 완전 삭제(DELETE)하면 place_rank_checks가 ON DELETE CASCADE라
-                            # 그동안 쌓인 체크 이력까지 같이 사라진다. 대신 비활성화만 해서
-                            # 목록/자동 체크에서는 빠지되 이력은 그대로 보존한다.
-                            if st.button("-", key=f"kwdel_{kw['id']}"):
-                                get_supabase_client().table("place_rank_keywords").update(
-                                    {"is_active": False}
-                                ).eq("id", kw["id"]).execute()
-                                fetch_all_keywords.clear()
-                                st.rerun()
+        with tab_meeting:
+            render_weekly_snapshot_section(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS, "meet")
+            st.markdown(
+                build_brand_table_html(keyword_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS),
+                unsafe_allow_html=True,
+            )
