@@ -134,7 +134,7 @@ st.markdown(f"""
     }}
     .rank-status-row:last-child {{ border-bottom: none; }}
     .rank-status-info {{ display: flex; flex-direction: column; }}
-    .rank-kw {{ font-size: 14px; font-weight: 600; color: #16181D; }}
+    .rank-kw {{ font-size: 13px; font-weight: 500; color: #5B6472; }}
     .rank-meta {{ font-size: 12px; color: {MUTED_TEXT}; margin-top: 2px; }}
     .rank-status-value {{ display: flex; align-items: center; gap: 6px; }}
     .rank-top10 {{ font-size: 12px; color: #2563EB; }}
@@ -307,18 +307,6 @@ st.markdown(f"""
         flex: 0 0 auto !important;
         width: auto !important;
         min-width: auto !important;
-    }}
-    /* 제주도 맛집 3주 스냅샷: 주차별 목록 줄 수가 서로 다른데(예: 오늘=14줄, 과거=1줄
-       "데이터 없음"), align-items 기본값이 세 컬럼을 세로 중앙 정렬해버려서 짧은 컬럼이
-       아래로 밀려 보이던 문제 — 위쪽 정렬로 고정 */
-    div[class*="st-key-pr_snapshot_"] div[data-testid="stHorizontalBlock"] {{
-        align-items: flex-start !important;
-    }}
-    /* 제주도 맛집 3주 스냅샷: 실무 보고서 표처럼 주차 사이에 구분선을 넣는다
-       (◀▶ 두 개 열만이 아니라 세 개 주차 열 사이 경계 — nth-child(1)은 제외) */
-    div[class*="st-key-pr_snapshot_weeks_"] > div[data-testid="stLayoutWrapper"] > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:not(:first-child) {{
-        border-left: 1px solid #E3E6EB !important;
-        padding-left: 14px !important;
     }}
     div[class*="st-key-pr_date_prev"] button,
     div[class*="st-key-pr_date_next"] button {{

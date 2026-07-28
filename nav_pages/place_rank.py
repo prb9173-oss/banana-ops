@@ -81,9 +81,63 @@ def filter_groups_for_report(keyword_groups):
     return filtered
 
 
-def build_brand_table_html(groups, checks_by_keyword, selected_date, previous_date, top10_keywords):
+# 표 전체에서 쓰는 선/배경 색 — 한 곳에서만 정의해서 "어떤 선은 굵고 어떤 선은 얇은"
+# 불일치가 다시 생기지 않게 한다. 브랜드 구분은 왼쪽 병합 셀(배경색+굵은 글씨)만으로
+# 표시하고, 그 외 내용 칸은 항상 흰 배경으로 통일한다.
+TABLE_BORDER = "#000000"  # 테스트: 표를 더 직관적으로 보이게 구분선을 검은색으로 시도
+BRAND_CELL_BG = "#EEF3FA"
+
+
+def build_snapshot_rows_html(keyword_groups, checks_by_keyword, selected_date, weekly_snapshot_keywords):
+    """제주도 맛집처럼 지정된 키워드는 브랜드 표 바로 위에 최근 3주 경쟁 현황을
+    보여준다 — build_brand_rows_html과 같은 <table> 안에 이어붙일 <tr> 목록만
+    돌려줘서 두 구역이 서로 다른 표가 아니라 한 표처럼 보이게 한다."""
+    rows_html = ""
+    for keyword_text, rows in keyword_groups:
+        if keyword_text not in weekly_snapshot_keywords:
+            continue
+        rep_checks = checks_by_keyword.get(rows[0]["id"], [])
+        # border는 <tr>가 아니라 각 <td>에 직접 준다 — border-collapse + rowspan이
+        # 섞이면 <table> 자체의 outer border나 <tr> border는 브라우저에서 잘려 보이는
+        # 경우가 있어서, 표 바깥 네 변도 가장자리 <td>에 각각 명시적으로 그어준다.
+        # 이 스냅샷 행이 항상 표의 첫 행이라 top border도 여기서 같이 준다.
+        rows_html += '<tr>'
+        rows_html += (
+            f'<td style="background:{BRAND_CELL_BG}; font-weight:700; padding:10px; '
+            f'vertical-align:middle; text-align:center; border-right:1px solid {TABLE_BORDER}; '
+            f'border-bottom:1px solid {TABLE_BORDER}; border-top:1px solid {TABLE_BORDER}; '
+            f'border-left:1px solid {TABLE_BORDER}; white-space:nowrap;">{keyword_text}<br>'
+            f'<span style="font-size:11px; font-weight:500; color:#5B6472;">최근 3주</span></td>'
+        )
+        for col_idx, weeks_back in enumerate([2, 1, 0]):
+            snap_date = selected_date - timedelta(days=7 * weeks_back)
+            snap_check = find_check_for_date(rep_checks, snap_date)
+            snap_places = (snap_check or {}).get("top_places")
+            border_right = f"border-right:1px solid {TABLE_BORDER};"
+            date_label = f'<div style="font-weight:700; margin-bottom:6px;">{snap_date.strftime("%m/%d")}</div>'
+            if snap_places:
+                top14 = snap_places[:14]
+                half = (len(top14) + 1) // 2
+                left_items = "".join(f'<div class="rank-snapshot-item">{j}. {p.get("name", "")}</div>' for j, p in enumerate(top14[:half], start=1))
+                right_items = "".join(f'<div class="rank-snapshot-item">{j}. {p.get("name", "")}</div>' for j, p in enumerate(top14[half:], start=half + 1))
+                body = f'<div style="display:flex; gap:10px;"><div style="flex:1;">{left_items}</div><div style="flex:1;">{right_items}</div></div>'
+            else:
+                body = '<span class="rank-meta">데이터 없음</span>'
+            rows_html += (
+                f'<td style="padding:8px 10px; vertical-align:top; width:33%; '
+                f'border-bottom:1px solid {TABLE_BORDER}; border-top:1px solid {TABLE_BORDER}; {border_right}">'
+                f'{date_label}{body}</td>'
+            )
+        rows_html += '</tr>'
+    return rows_html
+
+
+def build_brand_rows_html(groups, checks_by_keyword, selected_date, previous_date, top10_keywords, add_top_border=False):
     """실무 보고서와 동일한 브랜드 병합 표 — 회의용/보고용 둘 다 이 함수로 렌더링해서
-    형식을 통일한다. 순위/증감은 카드뷰와 같은 배지(pill) 스타일을 그대로 쓴다."""
+    형식을 통일한다. build_snapshot_rows_html과 같은 <table> 안에 이어붙일 <tr>
+    목록만 돌려준다. 순위/증감은 카드뷰와 같은 배지(pill) 스타일을 그대로 쓴다.
+    add_top_border=True는 이 표 앞에 스냅샷 구역이 없어서 이 부분이 표의 맨 첫
+    행이 되는 경우(top border를 직접 그어줘야 함)를 위한 것."""
     brand_buckets = {}
     brand_order = []
     for keyword_text, rows in groups:
@@ -93,25 +147,27 @@ def build_brand_table_html(groups, checks_by_keyword, selected_date, previous_da
             brand_order.append(brand)
         brand_buckets[brand].append((keyword_text, rows))
 
-    table_html = '<table style="width:100%; border-collapse:collapse; font-size:13px; color:#16181D;">'
-    for brand in brand_order:
+    rows_html = ""
+    for brand_idx, brand in enumerate(brand_order):
         brand_groups = brand_buckets[brand]
         for i, (keyword_text, rows) in enumerate(brand_groups):
-            table_html += '<tr style="border-bottom:1px solid #E3E6EB;">'
+            is_very_first_row = add_top_border and brand_idx == 0 and i == 0
+            top_border = f"border-top:1px solid {TABLE_BORDER};" if is_very_first_row else ""
+            rows_html += '<tr>'
             if i == 0:
-                table_html += (
-                    f'<td rowspan="{len(brand_groups)}" style="background:#EEF3FA; '
-                    f'font-weight:700; padding:10px; vertical-align:top; '
-                    f'border-right:1px solid #E3E6EB; white-space:nowrap;">{brand}</td>'
+                # 브랜드 셀은 rowspan이라 border-bottom을 주면 그 브랜드 블록 전체가
+                # 끝나는 시점(마지막 키워드 행)에만 선이 그어진다 — 의도한 동작.
+                # 왼쪽 가장자리 셀이라 border-left도 항상 준다(표 바깥 왼쪽 테두리).
+                rows_html += (
+                    f'<td rowspan="{len(brand_groups)}" style="background:{BRAND_CELL_BG}; '
+                    f'font-weight:700; padding:10px; vertical-align:middle; text-align:center; '
+                    f'border-right:1px solid {TABLE_BORDER}; border-bottom:1px solid {TABLE_BORDER}; '
+                    f'border-left:1px solid {TABLE_BORDER}; {top_border} white-space:nowrap;">{brand}</td>'
                 )
             title_top10_html = ""
             if keyword_text in top10_keywords:
                 rep_check = find_check_for_date(checks_by_keyword.get(rows[0]["id"], []), selected_date)
                 title_top10_html = build_top10_html((rep_check or {}).get("top_places"))
-            table_html += (
-                f'<td style="padding:8px 10px; font-weight:600; vertical-align:top; max-width:160px;">'
-                f'<span style="white-space:nowrap;">{keyword_text}</span>{title_top10_html}</td>'
-            )
 
             store_cells = []
             for kw in rows:
@@ -120,39 +176,35 @@ def build_brand_table_html(groups, checks_by_keyword, selected_date, previous_da
                 selected_check = find_check_for_date(checks, selected_date)
                 previous_check = find_check_for_date(checks, previous_date)
                 store_cells.append(build_rank_info_html(store_name, kw, selected_check, previous_check))
-            table_html += f'<td style="padding:8px 10px;">{"".join(store_cells)}</td>'
-            table_html += '</tr>'
-    table_html += '</table>'
-    return table_html
+
+            rows_html += (
+                # colspan="3" — 스냅샷 행이 이 표에 "라벨 1칸 + 날짜 3칸"짜리 4열 구조를
+                # 만들어두기 때문에, 여기서도 폭을 맞춰 3칸을 다 차지하게 하지 않으면
+                # 브라우저가 이 칸을 스냅샷의 첫 날짜 칸 너비로만 좁혀버린다.
+                f'<td colspan="3" style="padding:8px 10px; vertical-align:top; '
+                f'border-bottom:1px solid {TABLE_BORDER}; border-right:1px solid {TABLE_BORDER}; {top_border}">'
+                f'<div style="font-size:15px; font-weight:700; color:#0F172A; margin-bottom:6px;">{keyword_text}{title_top10_html}</div>'
+                f'<div style="display:flex; flex-direction:column; gap:5px;">{"".join(store_cells)}</div></td>'
+            )
+            rows_html += '</tr>'
+    return rows_html
 
 
-def render_weekly_snapshot_section(keyword_groups, checks_by_keyword, selected_date, weekly_snapshot_keywords, key_prefix):
-    for snap_idx, (keyword_text, rows) in enumerate(keyword_groups):
-        if keyword_text not in weekly_snapshot_keywords:
-            continue
-        with st.container(border=True, key=f"pr_snapshot_{key_prefix}_{snap_idx}"):
-            st.markdown(f"**{keyword_text}** — 최근 3주")
-            rep_checks = checks_by_keyword.get(rows[0]["id"], [])
-            with st.container(key=f"pr_snapshot_weeks_{key_prefix}_{snap_idx}"):
-                snap_cols = st.columns(3, vertical_alignment="top")
-                for i, weeks_back in enumerate([2, 1, 0]):
-                    snap_date = selected_date - timedelta(days=7 * weeks_back)
-                    snap_check = find_check_for_date(rep_checks, snap_date)
-                    with snap_cols[i]:
-                        st.markdown(f"**{snap_date.strftime('%m/%d')}**")
-                        snap_places = (snap_check or {}).get("top_places")
-                        if snap_places:
-                            top14 = snap_places[:14]
-                            half = (len(top14) + 1) // 2
-                            left_col, right_col = st.columns(2)
-                            with left_col:
-                                for j, p in enumerate(top14[:half], start=1):
-                                    st.markdown(f'<div class="rank-snapshot-item">{j}. {p.get("name", "")}</div>', unsafe_allow_html=True)
-                            with right_col:
-                                for j, p in enumerate(top14[half:], start=half + 1):
-                                    st.markdown(f'<div class="rank-snapshot-item">{j}. {p.get("name", "")}</div>', unsafe_allow_html=True)
-                        else:
-                            st.caption("데이터 없음")
+def render_rank_tables(snapshot_rows_html, brand_rows_html):
+    """3주 스냅샷 + 브랜드 표를 하나의 <table> 안에 이어붙여서 렌더링한다 — 표를
+    두 개로 나누면(별도 <table> 태그) 그 사이에 브라우저가 여백을 넣어 두 표가
+    분리돼 보이므로, 반드시 하나의 <table> 태그 안에서 합쳐야 한다.
+    이 표를 감싸는 st.container(section_rank_results)가 이미 카드(테두리+패딩)라
+    표 자체에는 별도 테두리 박스를 씌우지 않는다 — 카드 안에 카드가 겹치면
+    아래쪽에 불필요한 빈 공간만 늘어난다."""
+    inner = snapshot_rows_html + brand_rows_html
+    if not inner:
+        return
+    st.markdown(
+        f'<table style="width:100%; border-collapse:collapse; font-size:13px; color:#16181D; '
+        f'border:1px solid {TABLE_BORDER};">{inner}</table>',
+        unsafe_allow_html=True,
+    )
 
 
 def get_brand(store_name):
@@ -237,7 +289,7 @@ def build_rank_info_html(store_name, keyword_row, selected_check, previous_check
             else:
                 delta_pill = '<span class="status-pill pill-rank-same">- (유지)</span>'
 
-    return f'<div>{name_bits} {value_pill}{delta_pill}</div>'
+    return f'<div>{name_bits} {value_pill} {delta_pill}</div>'
 
 
 st.subheader("플레이스 순위 추적")
@@ -366,19 +418,22 @@ with st.container(border=True, key="section_rank_results"):
         tab_report, tab_meeting = st.tabs(["📊 보고용", "📋 회의용"])
 
         with tab_report:
-            render_weekly_snapshot_section(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS, "rep")
+            snapshot_rows = build_snapshot_rows_html(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS)
             report_groups = filter_groups_for_report(keyword_groups)
             if report_groups:
-                st.markdown(
-                    build_brand_table_html(report_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS),
-                    unsafe_allow_html=True,
+                brand_rows = build_brand_rows_html(
+                    report_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
+                    add_top_border=not snapshot_rows,
                 )
+                render_rank_tables(snapshot_rows, brand_rows)
             else:
+                render_rank_tables(snapshot_rows, "")
                 st.info("보고용으로 표시할 키워드가 없습니다.")
 
         with tab_meeting:
-            render_weekly_snapshot_section(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS, "meet")
-            st.markdown(
-                build_brand_table_html(keyword_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS),
-                unsafe_allow_html=True,
+            snapshot_rows = build_snapshot_rows_html(keyword_groups, checks_by_keyword, selected_date, WEEKLY_SNAPSHOT_KEYWORDS)
+            brand_rows = build_brand_rows_html(
+                keyword_groups, checks_by_keyword, selected_date, previous_date, TOP10_KEYWORDS,
+                add_top_border=not snapshot_rows,
             )
+            render_rank_tables(snapshot_rows, brand_rows)
