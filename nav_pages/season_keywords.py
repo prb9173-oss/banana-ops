@@ -252,10 +252,9 @@ with st.container(border=True, key="section_add_bundle"):
     st.markdown("#### 📝 시즌 키워드 묶음 추가")
 
     with st.form("add_bundle_form", clear_on_submit=True):
-        bundle_name = st.text_input("묶음 이름", placeholder="예: 봄 시즌")
+        bundle_name = st.text_input("묶음 이름")
         bundle_keywords_raw = st.text_area(
             "키워드 (한 줄에 하나씩 입력)",
-            placeholder="벚꽃 맛집\n봄나들이 코스\n봄 데이트 코스",
             height=120,
         )
         submitted = st.form_submit_button("묶음 추가")
