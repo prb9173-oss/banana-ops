@@ -1,5 +1,3 @@
-import time
-
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -520,7 +518,12 @@ def _set_admin_cookie(value):
     """document.cookie를 부모 문서(메인 페이지)에 직접 심는다 — st.session_state는
     새로고침/재방문 시 초기화되지만 쿠키는 브라우저에 남아있어서, 다음에 다시 열었을 때
     비밀번호를 또 입력하지 않아도 자동으로 관리자 모드가 켜지게 하기 위함. 값이 빈
-    문자열이면 max-age=0으로 즉시 만료시켜 로그아웃 처리한다."""
+    문자열이면 max-age=0으로 즉시 만료시켜 로그아웃 처리한다.
+    쿠키를 심은 직후 곧바로 페이지를 새로고침(location.reload)까지 이 스크립트 안에서
+    처리한다 — st.rerun()을 서버 쪽에서 따로 호출하면 그 rerun이 방금 그린 이 iframe을
+    스크립트가 실행되기도 전에 지워버릴 수 있어서(sleep으로 시간차를 줘봤지만 실제
+    환경에서 여전히 불안정했다), "쿠키 굽기 -> 새로고침"을 전부 브라우저 쪽 한 스크립트
+    안에서 순서대로 실행되게 만들어 타이밍 경쟁 자체를 없앤다."""
     max_age = "7776000" if value else "0"  # 90일, 로그아웃 시 0
     components.html(
         f"""
@@ -528,7 +531,7 @@ def _set_admin_cookie(value):
         (function() {{
             var doc = window.parent.document;
             var s = doc.createElement('script');
-            s.text = "document.cookie = '{ADMIN_COOKIE_NAME}={value}; max-age={max_age}; path=/';";
+            s.text = "document.cookie = '{ADMIN_COOKIE_NAME}={value}; max-age={max_age}; path=/'; window.location.reload();";
             doc.body.appendChild(s);
         }})();
         </script>
@@ -554,12 +557,7 @@ def _admin_login_dialog():
         if pw and admin_secret and pw == admin_secret:
             st.session_state["is_admin"] = True
             _set_admin_cookie(ADMIN_COOKIE_VALUE)
-            # components.html로 심은 스크립트가 브라우저에서 실제로 실행될 시간을 주지
-            # 않고 바로 st.rerun()하면, 다음 rerun이 이 iframe을 지워버려 쿠키가 심어지기
-            # 전에 사라지는 경우가 실제 환경에서 있었다(0.3초로는 부족했음) — 넉넉히 쉬어서
-            # 스크립트가 실행될 여유를 준다.
-            time.sleep(1.0)
-            st.rerun()
+            st.success("로그인되었습니다. 새로고침 중...")
         else:
             st.error("비밀번호가 올바르지 않습니다.")
 
@@ -580,8 +578,6 @@ with st.sidebar:
         if st.button("로그아웃", key="admin_logout", width="stretch"):
             st.session_state["is_admin"] = False
             _set_admin_cookie("")
-            time.sleep(1.0)
-            st.rerun()
     else:
         if st.button("🔒 관리자 모드", key="admin_login_btn", width="stretch"):
             _admin_login_dialog()
