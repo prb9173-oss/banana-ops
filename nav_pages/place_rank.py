@@ -217,8 +217,13 @@ def render_rank_tables(snapshot_rows_html, brand_rows_html, container_id=None):
         # 여기에 테두리를 하나 더 그어서 이중으로 두껍게 만드는 대신(내부 격자선과
         # 두께가 달라져 어색해 보였다), 흰 여백만 살짝 둬서 캡처 경계와 실제 테두리
         # 사이에 여유를 준다 — 두께는 그대로 1px 유지.
+        # display:inline-block이 없으면 이 div가 일반 block으로 부모(넓은 화면일수록
+        # 더 넓어짐) 폭 전체를 차지해버려서, 표는 960px에서 멈추는데 캡처 범위(=이 div)는
+        # 그보다 훨씬 넓어져 오른쪽에 빈 공백까지 같이 캡처되는 문제가 있었다 —
+        # inline-block으로 표 실제 너비만큼만 감싸도록 만든다.
         table_html = (
-            f'<div id="{container_id}" style="background:#FFFFFF; padding:3px;">{table_html}</div>'
+            f'<div id="{container_id}" style="background:#FFFFFF; padding:3px; '
+            f'display:inline-block;">{table_html}</div>'
         )
     st.markdown(table_html, unsafe_allow_html=True)
 
@@ -367,9 +372,7 @@ def build_rank_info_html(store_name, keyword_row, selected_check, previous_check
         value_pill = '<span class="status-pill pill-rank-unknown">체크 실패</span>'
         delta_pill = ""
     elif selected_check["status"] == "not_found" or selected_check["rank"] is None:
-        scanned = selected_check.get("results_scanned")
-        label = f"{scanned}위 밖" if scanned else "순위권 밖"
-        value_pill = f'<span class="status-pill pill-rank-unknown">{label}</span>'
+        value_pill = '<span class="status-pill pill-rank-unknown">누락</span>'
         delta_pill = ""
     else:
         value_pill = f'<span class="status-pill pill-rank-same">{selected_check["rank"]}위</span>'
@@ -381,7 +384,7 @@ def build_rank_info_html(store_name, keyword_row, selected_check, previous_check
             elif diff < 0:
                 delta_pill = f'<span class="status-pill pill-rank-down">▼ {abs(diff)}</span>'
             else:
-                delta_pill = '<span class="status-pill pill-rank-same">- (유지)</span>'
+                delta_pill = '<span class="status-pill pill-rank-same">동일</span>'
 
     return f'<div>{name_bits} {value_pill} {delta_pill}</div>'
 
