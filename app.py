@@ -6,8 +6,8 @@ import streamlit.components.v1 as components
 # ==========================================
 st.set_page_config(page_title="banana-ops", layout="wide", page_icon="🍌")
 
-PRIMARY = "#1E3A5F"
-PRIMARY_HOVER = "#16304C"
+PRIMARY = "#3182F6"
+PRIMARY_HOVER = "#1B64DA"
 BORDER = "#E3E6EB"
 MUTED_TEXT = "#5B6472"
 
@@ -94,7 +94,7 @@ st.markdown(f"""
     }}
     .pill-ready {{ background:#DCFCE7; color:#166534; }}
     .pill-progress {{ background:#FEF3C7; color:#92400E; }}
-    .pill-planned {{ background:#EEF3FA; color:#3B5A8A; }}
+    .pill-planned {{ background:#EEF3FA; color:{PRIMARY_HOVER}; }}
 
     /* 매장별 키워드 on/off 실시간 상태 목록 */
     .kw-status-card {{
@@ -113,7 +113,7 @@ st.markdown(f"""
     .kw-status-row:last-child {{ border-bottom: none; }}
     .pill-kw-on {{ background:#DCFCE7; color:#166534; margin-bottom: 0; }}
     .pill-kw-off {{ background:#F1F5F9; color:#64748B; margin-bottom: 0; }}
-    .pill-kw-new {{ background:#EEF3FA; color:#3B5A8A; margin-bottom: 0; }}
+    .pill-kw-new {{ background:#EEF3FA; color:{PRIMARY_HOVER}; margin-bottom: 0; }}
 
     /* 플레이스 순위 전일 대비 변동 배지 */
     .pill-rank-up {{ background:#DCFCE7; color:#166534; margin-bottom: 0; }}
@@ -283,7 +283,7 @@ st.markdown(f"""
     }}
     div[class*="st-key-up_"] button,
     div[class*="st-key-down_"] button {{
-        background-color: #475569 !important;
+        background-color: {PRIMARY} !important;
         border: none !important;
     }}
     div[class*="st-key-up_"] button p,
@@ -320,7 +320,7 @@ st.markdown(f"""
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        background-color: #475569 !important;
+        background-color: {PRIMARY} !important;
         border: none !important;
         border-radius: 6px !important;
         box-shadow: none !important;
@@ -437,7 +437,7 @@ st.markdown(f"""
     .edit-panel-label {{
         font-size: 12.5px;
         font-weight: 700;
-        color: #3B5A8A;
+        color: {PRIMARY_HOVER};
         margin-bottom: 6px;
     }}
 
@@ -481,7 +481,11 @@ st.markdown(f"""
     }}
 
     /* ---- 사이드바 폭 / 내비게이션 항목 크기 조정 ---- */
-    section[data-testid="stSidebar"] {{
+    /* aria-expanded="true"일 때만 폭을 강제해야 한다 — 조건 없이 항상 min-width를
+       강제하면, 사이드바를 접었을 때도 Streamlit이 이 트랙(사이드바가 차지하는
+       레이아웃 공간)을 250px로 계속 잡아둬서, 펼치기(>>) 버튼과 본문 전체가
+       왼쪽 끝으로 안 붙고 예전 사이드바 자리만큼 오른쪽에 밀려나 있는 문제가 있었다. */
+    section[data-testid="stSidebar"][aria-expanded="true"] {{
         width: 250px !important;
         min-width: 250px !important;
     }}
@@ -492,6 +496,22 @@ st.markdown(f"""
     a[data-testid="stSidebarNavLink"] p {{
         font-size: 15.5px !important;
         line-height: 42px !important;
+    }}
+    /* 선택 안 된 메뉴 항목은 Streamlit 기본값이 글자 80%/아이콘 60% 불투명도라 옅게
+       보인다 — 선택 여부와 상관없이 전부 진한 검정 + 볼드로 통일해서 가독성을 올린다.
+       (현재 페이지 구분은 아래 색상만으로 이미 되므로 두께 차이를 크게 안 둬도 된다) */
+    a[data-testid="stSidebarNavLink"] p,
+    a[data-testid="stSidebarNavLink"] [data-testid="stIconMaterial"] {{
+        color: #000000 !important;
+        opacity: 1 !important;
+        font-weight: 600 !important;
+    }}
+    /* 현재 페이지만 포인트 컬러로 강조 — 안 그러면 전부 같은 진한 회색이라
+       지금 보고 있는 메뉴가 뭔지 구분이 잘 안 된다. */
+    a[data-testid="stSidebarNavLink"][aria-current="page"] p,
+    a[data-testid="stSidebarNavLink"][aria-current="page"] [data-testid="stIconMaterial"] {{
+        color: {PRIMARY} !important;
+        font-weight: 700 !important;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -615,7 +635,8 @@ def _admin_login_dialog():
 # 내비게이션 링크 바로 아래(페이지별로 사이드바에 뭔가 더 추가하지 않는 한 사실상
 # 맨 아래)에 고정해 어느 페이지에서도 항상 보이게 한다.
 with st.sidebar:
-    st.divider()
+    # Streamlit이 내비게이션 링크 목록 밑에 구분선(stSidebarNavSeparator)을 이미
+    # 자동으로 그려주기 때문에, 여기서 st.divider()를 또 넣으면 선이 두 개가 된다.
     if st.session_state["is_admin"]:
         st.markdown(
             '<div style="margin-bottom:8px;"><span class="status-pill pill-kw-on">🔓 관리자 모드</span></div>',

@@ -121,7 +121,7 @@ def render_table_and_button_html(df, is_summary_table=False):
     <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
         {table_html}
         <button id="btn-{unique_id}" onclick="copyText()" style="
-            background-color: #1E3A5F;
+            background-color: #3182F6;
             color: #FFFFFF;
             border: none;
             border-radius: 8px;
@@ -135,7 +135,7 @@ def render_table_and_button_html(df, is_summary_table=False):
             text-align: center;
             display: block;
             transition: background-color 0.15s ease;
-        " onmouseover="this.style.backgroundColor='#16304C'" onmouseout="this.style.backgroundColor='#1E3A5F'">
+        " onmouseover="this.style.backgroundColor='#1B64DA'" onmouseout="this.style.backgroundColor='#3182F6'">
             📋 복사하기
         </button>
         <textarea id="area-{unique_id}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
@@ -165,7 +165,7 @@ def render_table_and_button_html(df, is_summary_table=False):
         btn.style.color = '#166534';
         setTimeout(function() {{
             btn.innerHTML = '📋 복사하기';
-            btn.style.backgroundColor = '#1E3A5F';
+            btn.style.backgroundColor = '#3182F6';
             btn.style.color = '#FFFFFF';
         }}, 2000);
     }}
@@ -223,7 +223,7 @@ def render_summary_table_with_copy_btn(title, header_value_pairs):
     <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
         {table_html}
         <button id="btn-{uid}" onclick="copyText()" style="
-            background-color: #1E3A5F;
+            background-color: #3182F6;
             color: #FFFFFF;
             border: none;
             border-radius: 8px;
@@ -237,7 +237,7 @@ def render_summary_table_with_copy_btn(title, header_value_pairs):
             text-align: center;
             display: block;
             transition: background-color 0.15s ease;
-        " onmouseover="this.style.backgroundColor='#16304C'" onmouseout="this.style.backgroundColor='#1E3A5F'">
+        " onmouseover="this.style.backgroundColor='#1B64DA'" onmouseout="this.style.backgroundColor='#3182F6'">
             📋 복사하기
         </button>
         <textarea id="area-{uid}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
@@ -267,7 +267,7 @@ def render_summary_table_with_copy_btn(title, header_value_pairs):
         btn.style.color = '#166534';
         setTimeout(function() {{
             btn.innerHTML = '📋 복사하기';
-            btn.style.backgroundColor = '#1E3A5F';
+            btn.style.backgroundColor = '#3182F6';
             btn.style.color = '#FFFFFF';
         }}, 2000);
     }}
@@ -320,7 +320,7 @@ def render_daily_table_with_copy_btn(raw_df):
     <div style="font-family:inherit; color:#16181D; background-color:#FFFFFF; padding:5px;">
         {table_html}
         <button id="btn-{uid}" onclick="copyText()" style="
-            background-color: #1E3A5F;
+            background-color: #3182F6;
             color: #FFFFFF;
             border: none;
             border-radius: 8px;
@@ -334,7 +334,7 @@ def render_daily_table_with_copy_btn(raw_df):
             text-align: center;
             display: block;
             transition: background-color 0.15s ease;
-        " onmouseover="this.style.backgroundColor='#16304C'" onmouseout="this.style.backgroundColor='#1E3A5F'">
+        " onmouseover="this.style.backgroundColor='#1B64DA'" onmouseout="this.style.backgroundColor='#3182F6'">
             📋 복사하기
         </button>
         <textarea id="area-{uid}" style="position:absolute; left:-9999px; width:1px; height:1px;">{tsv_text}</textarea>
@@ -364,7 +364,7 @@ def render_daily_table_with_copy_btn(raw_df):
         btn.style.color = '#166534';
         setTimeout(function() {{
             btn.innerHTML = '📋 복사하기';
-            btn.style.backgroundColor = '#1E3A5F';
+            btn.style.backgroundColor = '#3182F6';
             btn.style.color = '#FFFFFF';
         }}, 2000);
     }}
