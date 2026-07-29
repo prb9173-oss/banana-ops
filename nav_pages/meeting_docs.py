@@ -1,7 +1,6 @@
 import streamlit as st
 
 st.subheader("통합 회의 자료 수집 기능")
-st.caption("팀원들이 자료를 미리 올려두면 하나의 프리젠테이션처럼 볼 수 있게 합니다.")
 
 col1, col2 = st.columns(2)
 

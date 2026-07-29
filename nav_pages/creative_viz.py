@@ -1,7 +1,6 @@
 import streamlit as st
 
 st.subheader("광고 소재 및 데이터 시각화")
-st.caption("복잡한 성과 데이터를 화면 자체가 보고서 역할을 하도록 정리합니다.")
 
 col1, col2, col3 = st.columns(3)
 

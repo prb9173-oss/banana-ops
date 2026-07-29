@@ -362,7 +362,7 @@ def _toggle_meeting_keyword_group(checkbox_key, keyword_ids):
 
 # 키워드 제목 옆 경쟁업체 목록 개수 — 실무에서 실제로 쓰는 값이 "안 보여줌 / Top 2 /
 # Top 10" 세 가지뿐이라 자유 입력 숫자칸 대신 선택형으로 제한한다.
-TOP_N_OPTIONS = [("표시 안 함", 0), ("Top 2", 2), ("Top 10", 10)]
+TOP_N_OPTIONS = [("경쟁업체 미표시", 0), ("Top 2", 2), ("Top 10", 10)]
 TOP_N_LABELS = [label for label, _ in TOP_N_OPTIONS]
 TOP_N_VALUE_TO_LABEL = {value: label for label, value in TOP_N_OPTIONS}
 TOP_N_LABEL_TO_VALUE = dict(TOP_N_OPTIONS)
@@ -438,7 +438,6 @@ def build_rank_info_html(store_name, keyword_row, selected_check, previous_check
 
 
 st.subheader("플레이스 순위 추적")
-st.caption("매장별 타겟 키워드의 네이버 플레이스 검색 순위를 매일 체크하고 전일/전주 대비 변동을 확인합니다.")
 
 try:
     stores = fetch_stores()
@@ -647,49 +646,50 @@ with tab_manage:
                         # 보고용/회의용 포함 여부·경쟁업체 Top N은 매장(지점)별이 아니라
                         # 키워드 그룹 전체에 한 번만 적용되는 설정이라, 매장 행이 아니라
                         # 그룹 헤더에 딱 한 번만 두고 바꾸면 그룹의 모든 매장 행에 반영한다.
-                        col_report_chk, col_report_topn, col_meeting_chk, col_meeting_topn = st.columns(
-                            [3, 3, 3, 3], vertical_alignment="center"
-                        )
-                        with col_report_chk:
-                            report_chk_key = f"report_chk_{group_key}"
-                            st.checkbox(
-                                "보고용 포함",
-                                value=bool(rep_row.get("is_report_keyword")),
-                                key=report_chk_key,
-                                on_change=_toggle_report_keyword_group,
-                                args=(report_chk_key, keyword_ids),
+                        with st.container(key=f"pr_kwcontrols_{group_key}"):
+                            col_report_chk, col_report_topn, col_meeting_chk, col_meeting_topn = st.columns(
+                                [3, 3, 3, 3], vertical_alignment="center"
                             )
-                        with col_report_topn:
-                            report_topn_key = f"report_topn_{group_key}"
-                            st.selectbox(
-                                "보고용 경쟁업체",
-                                options=TOP_N_LABELS,
-                                index=TOP_N_LABELS.index(TOP_N_VALUE_TO_LABEL.get(rep_row.get("report_top_n") or 0, "표시 안 함")),
-                                key=report_topn_key,
-                                label_visibility="collapsed",
-                                on_change=_set_top_n_group,
-                                args=("report_top_n", report_topn_key, keyword_ids),
-                            )
-                        with col_meeting_chk:
-                            meeting_chk_key = f"meeting_chk_{group_key}"
-                            st.checkbox(
-                                "회의용 포함",
-                                value=rep_row.get("is_meeting_keyword", True),
-                                key=meeting_chk_key,
-                                on_change=_toggle_meeting_keyword_group,
-                                args=(meeting_chk_key, keyword_ids),
-                            )
-                        with col_meeting_topn:
-                            meeting_topn_key = f"meeting_topn_{group_key}"
-                            st.selectbox(
-                                "회의용 경쟁업체",
-                                options=TOP_N_LABELS,
-                                index=TOP_N_LABELS.index(TOP_N_VALUE_TO_LABEL.get(rep_row.get("meeting_top_n") or 0, "표시 안 함")),
-                                key=meeting_topn_key,
-                                label_visibility="collapsed",
-                                on_change=_set_top_n_group,
-                                args=("meeting_top_n", meeting_topn_key, keyword_ids),
-                            )
+                            with col_report_chk:
+                                report_chk_key = f"report_chk_{group_key}"
+                                st.checkbox(
+                                    "보고용",
+                                    value=bool(rep_row.get("is_report_keyword")),
+                                    key=report_chk_key,
+                                    on_change=_toggle_report_keyword_group,
+                                    args=(report_chk_key, keyword_ids),
+                                )
+                            with col_report_topn:
+                                report_topn_key = f"report_topn_{group_key}"
+                                st.selectbox(
+                                    "보고용 경쟁업체",
+                                    options=TOP_N_LABELS,
+                                    index=TOP_N_LABELS.index(TOP_N_VALUE_TO_LABEL.get(rep_row.get("report_top_n") or 0, "경쟁업체 미표시")),
+                                    key=report_topn_key,
+                                    label_visibility="collapsed",
+                                    on_change=_set_top_n_group,
+                                    args=("report_top_n", report_topn_key, keyword_ids),
+                                )
+                            with col_meeting_chk:
+                                meeting_chk_key = f"meeting_chk_{group_key}"
+                                st.checkbox(
+                                    "회의용",
+                                    value=rep_row.get("is_meeting_keyword", True),
+                                    key=meeting_chk_key,
+                                    on_change=_toggle_meeting_keyword_group,
+                                    args=(meeting_chk_key, keyword_ids),
+                                )
+                            with col_meeting_topn:
+                                meeting_topn_key = f"meeting_topn_{group_key}"
+                                st.selectbox(
+                                    "회의용 경쟁업체",
+                                    options=TOP_N_LABELS,
+                                    index=TOP_N_LABELS.index(TOP_N_VALUE_TO_LABEL.get(rep_row.get("meeting_top_n") or 0, "경쟁업체 미표시")),
+                                    key=meeting_topn_key,
+                                    label_visibility="collapsed",
+                                    on_change=_set_top_n_group,
+                                    args=("meeting_top_n", meeting_topn_key, keyword_ids),
+                                )
 
                         for kw in rows:
                             store_name = (kw.get("store_campaigns") or {}).get("store_name", "")

@@ -224,19 +224,52 @@ st.markdown(f"""
        같은 키워드를 여러 매장에 등록해두면 카드 하나에 지점별 행이 여러 개 쌓인다. */
     div[class*="st-key-pr_kwgroup_"] {{
         background-color: #FFFFFF;
-        padding-bottom: 14px !important;
-        margin-bottom: 8px !important;
+        padding: 10px 15px 6px !important;
+        margin-bottom: 4px !important;
+        /* Streamlit 기본 세로 블록 간격(16px)이 카드 하나의 높이 대부분을 차지해서,
+           키워드가 많아질수록(현재 70개+) 관리 탭 스크롤이 감당 안 되는 문제 —
+           제목행/컨트롤행/매장행 사이 간격을 확 줄여 카드 하나의 높이를 압축한다. */
+        gap: 4px !important;
     }}
     div[class*="st-key-pr_kwgroup_"] div[data-testid="stHorizontalBlock"] {{
         align-items: center !important;
     }}
     /* 한 그룹 카드 안에서 지점별 행을 구분선으로 분리 */
     div[class*="st-key-pr_kwrow_"] {{
-        padding: 4px 0 !important;
+        padding: 1px 0 !important;
         border-bottom: 1px solid #EEF0F3;
     }}
     div[class*="st-key-pr_kwrow_"]:last-of-type {{
         border-bottom: none;
+    }}
+    /* 보고용/회의용 포함·Top N 4개 컨트롤이 그냥 여백으로만 구분돼서 표처럼 안 보이던
+       문제 — 엑셀/장고 어드민 그리드처럼 칸 사이에 실선을 그어 표 형태로 보이게 한다.
+       (실제 <table>은 못 씀 — 안에 들어가는 게 콜백이 달린 진짜 st.checkbox/selectbox라
+       Streamlit 위젯은 Streamlit 레이아웃 함수를 통해서만 배치 가능) */
+    div[class*="st-key-pr_kwcontrols_"] {{
+        border-top: 1px solid {BORDER};
+        border-bottom: 1px solid {BORDER};
+        margin: 2px 0;
+        padding: 4px 0;
+    }}
+    div[class*="st-key-pr_kwcontrols_"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
+        border-right: 1px solid {BORDER};
+        padding-left: 12px !important;
+    }}
+    div[class*="st-key-pr_kwcontrols_"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:last-child {{
+        border-right: none;
+    }}
+    /* 체크박스/드롭다운 글자 크기 및 내부 여백도 줄여서 줄어든 행 간격과 비율이
+       맞도록(글자만 그대로면 오히려 더 답답하고 어색해 보인다) */
+    div[class*="st-key-pr_kwcontrols_"] label p {{
+        font-size: 12.5px !important;
+    }}
+    div[class*="st-key-pr_kwcontrols_"] div[data-testid="stSelectbox"] input {{
+        font-size: 12.5px !important;
+        padding: 2px 6px !important;
+    }}
+    div[class*="st-key-pr_kwcontrols_"] div[data-testid="stSelectbox"] div[role="group"] {{
+        min-height: unset !important;
     }}
     /* vertical_alignment="center"가 실제로는 stretch로 렌더링되는 문제 보정:
        제목+줄바꿈된 키워드 텍스트 블록 기준으로 버튼 행을 정확히 세로 중앙에 오도록 강제 */
