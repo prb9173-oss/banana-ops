@@ -514,6 +514,16 @@ st.markdown(f"""
         color: {PRIMARY} !important;
         font-weight: 600 !important;
     }}
+    /* 관리자 모드 블록을 사이드바 맨 아래에 고정 — stSidebarContent가 뷰포트 높이만큼
+       position:relative로 잡혀 있어서, 그 안에서 절대 위치로 띄우면 스크립트상 위치와
+       무관하게 항상 바닥에 붙는다. */
+    div[class*="st-key-admin_sidebar_block"] {{
+        position: absolute !important;
+        bottom: 20px;
+        left: 0;
+        right: 0;
+        padding: 0 20px;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -613,6 +623,31 @@ if not st.session_state["is_admin"]:
 
 @st.dialog("관리자 로그인")
 def _admin_login_dialog():
+    # 다이얼로그가 열리자마자 비밀번호 입력창에 자동으로 포커스를 줘서, 버튼을 누른
+    # 뒤 바로 키보드로 입력할 수 있게 한다. 다이얼로그는(components.html과 달리)
+    # 별도 iframe이 아니라 최상위 문서에 바로 렌더링되지만, 이 스크립트 자체는
+    # components.html의 iframe 안에서 실행되므로 window.parent.document에서 찾아야
+    # 한다. 다이얼로그 열림 애니메이션 중에는 아직 input이 없을 수 있어 짧게 재시도한다.
+    components.html(
+        """
+        <script>
+        (function() {
+            var doc = window.parent.document;
+            var tries = 0;
+            var timer = setInterval(function() {
+                var input = doc.querySelector('input[type="password"][aria-label="비밀번호"]');
+                if (input) {
+                    input.focus();
+                    clearInterval(timer);
+                } else if (++tries > 20) {
+                    clearInterval(timer);
+                }
+            }, 50);
+        })();
+        </script>
+        """,
+        height=0,
+    )
     # 버튼 클릭 대신 st.form을 써서, 비밀번호 입력 후 엔터만 쳐도(폼 안 위젯에서 엔터 ==
     # 폼의 기본 제출 버튼 클릭) 로그인되게 한다 — 매번 마우스로 "확인"을 눌러야 하는
     # 불편함을 없앤다.
@@ -636,18 +671,21 @@ def _admin_login_dialog():
 # 내비게이션 링크 바로 아래(페이지별로 사이드바에 뭔가 더 추가하지 않는 한 사실상
 # 맨 아래)에 고정해 어느 페이지에서도 항상 보이게 한다.
 with st.sidebar:
-    # Streamlit이 내비게이션 링크 목록 밑에 구분선(stSidebarNavSeparator)을 이미
-    # 자동으로 그려주기 때문에, 여기서 st.divider()를 또 넣으면 선이 두 개가 된다.
-    if st.session_state["is_admin"]:
-        st.markdown(
-            '<div style="margin-bottom:8px;"><span class="status-pill pill-kw-on">🔓 관리자 모드</span></div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("로그아웃", key="admin_logout", width="stretch"):
-            st.session_state["is_admin"] = False
-            _set_admin_persisted(False)
-    else:
-        if st.button("🔒 관리자 모드", key="admin_login_btn", width="stretch"):
-            _admin_login_dialog()
+    # 스크립트상 위치는 여전히 pg.run() 앞이지만(위 주석 이유 그대로), 시각적으로는
+    # CSS 절대 위치로 사이드바 맨 아래에 고정한다 — DOM 순서와 무관하게 항상 바닥에
+    # 붙어 보이도록. stSidebarContent가 position:relative + 뷰포트 높이라 이 안에서
+    # bottom:0 기준으로 띄우면 된다 (아래 st-key-admin_sidebar_block CSS 참고).
+    with st.container(key="admin_sidebar_block"):
+        if st.session_state["is_admin"]:
+            st.markdown(
+                '<div style="margin-bottom:8px;"><span class="status-pill pill-kw-on">🔓 관리자 모드</span></div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("로그아웃", key="admin_logout", width="stretch"):
+                st.session_state["is_admin"] = False
+                _set_admin_persisted(False)
+        else:
+            if st.button("🔒 관리자 모드", key="admin_login_btn", width="stretch"):
+                _admin_login_dialog()
 
 pg.run()
