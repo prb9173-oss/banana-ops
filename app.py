@@ -32,6 +32,7 @@ st.markdown(f"""
     div[data-testid="stMainBlockContainer"] {{
         padding-left: 2rem !important;
         padding-right: 2rem !important;
+        padding-top: 20px !important;
     }}
 
     div.stButton > button {{
@@ -498,20 +499,20 @@ st.markdown(f"""
         line-height: 42px !important;
     }}
     /* 선택 안 된 메뉴 항목은 Streamlit 기본값이 글자 80%/아이콘 60% 불투명도라 옅게
-       보인다 — 선택 여부와 상관없이 전부 진한 검정 + 볼드로 통일해서 가독성을 올린다.
+       보인다 — 선택 여부와 상관없이 전부 진한 검정으로 통일해서 가독성을 올린다.
        (현재 페이지 구분은 아래 색상만으로 이미 되므로 두께 차이를 크게 안 둬도 된다) */
     a[data-testid="stSidebarNavLink"] p,
     a[data-testid="stSidebarNavLink"] [data-testid="stIconMaterial"] {{
         color: #000000 !important;
         opacity: 1 !important;
-        font-weight: 600 !important;
+        font-weight: 400 !important;
     }}
     /* 현재 페이지만 포인트 컬러로 강조 — 안 그러면 전부 같은 진한 회색이라
        지금 보고 있는 메뉴가 뭔지 구분이 잘 안 된다. */
     a[data-testid="stSidebarNavLink"][aria-current="page"] p,
     a[data-testid="stSidebarNavLink"][aria-current="page"] [data-testid="stIconMaterial"] {{
         color: {PRIMARY} !important;
-        font-weight: 700 !important;
+        font-weight: 600 !important;
     }}
     </style>
 """, unsafe_allow_html=True)
