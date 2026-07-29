@@ -344,17 +344,19 @@ def swap_keyword_group_order(keyword_groups, idx_a, idx_b):
             counter += 1
 
 
-def _toggle_report_keyword(checkbox_key, keyword_id):
+def _toggle_report_keyword_group(checkbox_key, keyword_ids):
+    """같은 키워드 그룹의 매장들은 항상 다 같이 보고용에 포함되거나 다 같이 빠지지,
+    지점별로 다르게 쓸 일이 없어서 그룹(키워드) 전체 행에 한 번에 적용한다."""
     get_supabase_client().table("place_rank_keywords").update(
         {"is_report_keyword": st.session_state[checkbox_key]}
-    ).eq("id", keyword_id).execute()
+    ).in_("id", keyword_ids).execute()
     fetch_all_keywords.clear()
 
 
-def _toggle_meeting_keyword(checkbox_key, keyword_id):
+def _toggle_meeting_keyword_group(checkbox_key, keyword_ids):
     get_supabase_client().table("place_rank_keywords").update(
         {"is_meeting_keyword": st.session_state[checkbox_key]}
-    ).eq("id", keyword_id).execute()
+    ).in_("id", keyword_ids).execute()
     fetch_all_keywords.clear()
 
 
@@ -366,11 +368,11 @@ TOP_N_VALUE_TO_LABEL = {value: label for label, value in TOP_N_OPTIONS}
 TOP_N_LABEL_TO_VALUE = dict(TOP_N_OPTIONS)
 
 
-def _set_top_n(field_name, select_key, keyword_id):
+def _set_top_n_group(field_name, select_key, keyword_ids):
     value = TOP_N_LABEL_TO_VALUE[st.session_state[select_key]]
     get_supabase_client().table("place_rank_keywords").update(
         {field_name: value}
-    ).eq("id", keyword_id).execute()
+    ).in_("id", keyword_ids).execute()
     fetch_all_keywords.clear()
 
 
@@ -578,12 +580,26 @@ with tab_manage:
                         # 중간에 끼어들 수 있다. 전체 최댓값 기준으로 매겨서 항상 맨 아래(새
                         # 그룹)로 추가되게 한다.
                         next_order = max([k.get("display_order") or 0 for k in all_keywords], default=0) + 1
+                        new_kw_text = new_keyword.strip()
+                        insert_payload = {
+                            "store_id": selected_store_row["id"],
+                            "keyword": new_kw_text,
+                            "display_order": next_order,
+                        }
+                        # 이미 있는 키워드 그룹에 매장을 추가하는 경우, 그 그룹의 보고용/회의용
+                        # 포함 여부·Top N 설정을 그대로 물려받는다 — 매번 기본값(꺼짐)으로
+                        # 시작해서 새로 추가한 매장만 따로 켜줘야 하는 번거로움을 없앤다.
+                        existing_group = dict(keyword_groups).get(new_kw_text)
+                        if existing_group:
+                            rep_row = existing_group[0]
+                            insert_payload.update({
+                                "is_report_keyword": bool(rep_row.get("is_report_keyword")),
+                                "is_meeting_keyword": rep_row.get("is_meeting_keyword", True),
+                                "report_top_n": rep_row.get("report_top_n") or 0,
+                                "meeting_top_n": rep_row.get("meeting_top_n") or 0,
+                            })
                         try:
-                            get_supabase_client().table("place_rank_keywords").insert({
-                                "store_id": selected_store_row["id"],
-                                "keyword": new_keyword.strip(),
-                                "display_order": next_order,
-                            }).execute()
+                            get_supabase_client().table("place_rank_keywords").insert(insert_payload).execute()
                             fetch_all_keywords.clear()
                             st.success(f"'{selected_store}'에 '{new_keyword.strip()}' 키워드가 추가되었습니다.")
                             st.rerun()
@@ -597,6 +613,16 @@ with tab_manage:
                 st.info("추적 중인 키워드가 없습니다. 위에서 먼저 추가해 주세요.")
             else:
                 for group_idx, (keyword_text, rows) in enumerate(keyword_groups):
+                    keyword_ids = [r["id"] for r in rows]
+                    # 그룹 내 모든 매장 행은 항상 같은 값을 갖는 게 정상이라(지점별로 다르게
+                    # 쓸 일이 없음), 대표로 첫 번째 행 값만 읽어서 그룹 공용 컨트롤에 쓴다.
+                    rep_row = rows[0]
+                    # 위젯 key를 group_idx로 만들면, 순서 변경(▲▼)으로 그룹 순서가 바뀔 때
+                    # 같은 key를 다른 키워드 그룹이 재사용하게 되어 session_state에 남아있던
+                    # 이전 그룹의 체크 상태를 그대로 물려받는 버그가 생긴다(실제로 겪음 —
+                    # 순서를 바꾸자 다른 그룹의 체크 상태가 그대로 옮겨붙었음). rep_row["id"]는
+                    # 순서가 바뀌어도 그 키워드 그룹 고유의 값이라 안전하다.
+                    group_key = rep_row["id"]
                     with st.container(border=True, key=f"pr_kwgroup_{group_idx}"):
                         col_title, col_order = st.columns([9, 1], vertical_alignment="center")
                         with col_title:
@@ -618,50 +644,59 @@ with tab_manage:
                                     fetch_all_keywords.clear()
                                     st.rerun()
 
+                        # 보고용/회의용 포함 여부·경쟁업체 Top N은 매장(지점)별이 아니라
+                        # 키워드 그룹 전체에 한 번만 적용되는 설정이라, 매장 행이 아니라
+                        # 그룹 헤더에 딱 한 번만 두고 바꾸면 그룹의 모든 매장 행에 반영한다.
+                        col_report_chk, col_report_topn, col_meeting_chk, col_meeting_topn = st.columns(
+                            [3, 3, 3, 3], vertical_alignment="center"
+                        )
+                        with col_report_chk:
+                            report_chk_key = f"report_chk_{group_key}"
+                            st.checkbox(
+                                "보고용 포함",
+                                value=bool(rep_row.get("is_report_keyword")),
+                                key=report_chk_key,
+                                on_change=_toggle_report_keyword_group,
+                                args=(report_chk_key, keyword_ids),
+                            )
+                        with col_report_topn:
+                            report_topn_key = f"report_topn_{group_key}"
+                            st.selectbox(
+                                "보고용 경쟁업체",
+                                options=TOP_N_LABELS,
+                                index=TOP_N_LABELS.index(TOP_N_VALUE_TO_LABEL.get(rep_row.get("report_top_n") or 0, "표시 안 함")),
+                                key=report_topn_key,
+                                label_visibility="collapsed",
+                                on_change=_set_top_n_group,
+                                args=("report_top_n", report_topn_key, keyword_ids),
+                            )
+                        with col_meeting_chk:
+                            meeting_chk_key = f"meeting_chk_{group_key}"
+                            st.checkbox(
+                                "회의용 포함",
+                                value=rep_row.get("is_meeting_keyword", True),
+                                key=meeting_chk_key,
+                                on_change=_toggle_meeting_keyword_group,
+                                args=(meeting_chk_key, keyword_ids),
+                            )
+                        with col_meeting_topn:
+                            meeting_topn_key = f"meeting_topn_{group_key}"
+                            st.selectbox(
+                                "회의용 경쟁업체",
+                                options=TOP_N_LABELS,
+                                index=TOP_N_LABELS.index(TOP_N_VALUE_TO_LABEL.get(rep_row.get("meeting_top_n") or 0, "표시 안 함")),
+                                key=meeting_topn_key,
+                                label_visibility="collapsed",
+                                on_change=_set_top_n_group,
+                                args=("meeting_top_n", meeting_topn_key, keyword_ids),
+                            )
+
                         for kw in rows:
                             store_name = (kw.get("store_campaigns") or {}).get("store_name", "")
                             with st.container(key=f"pr_kwrow_{kw['id']}"):
-                                col_name, col_report, col_meeting, col_delete = st.columns([8, 4, 4, 2], vertical_alignment="center")
+                                col_name, col_delete = st.columns([10, 2], vertical_alignment="center")
                                 with col_name:
                                     st.markdown(f'<span class="rank-kw">{store_name}</span>', unsafe_allow_html=True)
-                                with col_report:
-                                    report_chk_key = f"report_chk_{kw['id']}"
-                                    st.checkbox(
-                                        "보고용 포함",
-                                        value=bool(kw.get("is_report_keyword")),
-                                        key=report_chk_key,
-                                        on_change=_toggle_report_keyword,
-                                        args=(report_chk_key, kw["id"]),
-                                    )
-                                    report_topn_key = f"report_topn_{kw['id']}"
-                                    st.selectbox(
-                                        "보고용 경쟁업체",
-                                        options=TOP_N_LABELS,
-                                        index=TOP_N_LABELS.index(TOP_N_VALUE_TO_LABEL.get(kw.get("report_top_n") or 0, "표시 안 함")),
-                                        key=report_topn_key,
-                                        label_visibility="collapsed",
-                                        on_change=_set_top_n,
-                                        args=("report_top_n", report_topn_key, kw["id"]),
-                                    )
-                                with col_meeting:
-                                    meeting_chk_key = f"meeting_chk_{kw['id']}"
-                                    st.checkbox(
-                                        "회의용 포함",
-                                        value=kw.get("is_meeting_keyword", True),
-                                        key=meeting_chk_key,
-                                        on_change=_toggle_meeting_keyword,
-                                        args=(meeting_chk_key, kw["id"]),
-                                    )
-                                    meeting_topn_key = f"meeting_topn_{kw['id']}"
-                                    st.selectbox(
-                                        "회의용 경쟁업체",
-                                        options=TOP_N_LABELS,
-                                        index=TOP_N_LABELS.index(TOP_N_VALUE_TO_LABEL.get(kw.get("meeting_top_n") or 0, "표시 안 함")),
-                                        key=meeting_topn_key,
-                                        label_visibility="collapsed",
-                                        on_change=_set_top_n,
-                                        args=("meeting_top_n", meeting_topn_key, kw["id"]),
-                                    )
                                 with col_delete:
                                     # 완전 삭제(DELETE)하면 place_rank_checks가 ON DELETE CASCADE라
                                     # 그동안 쌓인 체크 이력까지 같이 사라진다. 대신 비활성화만 해서
