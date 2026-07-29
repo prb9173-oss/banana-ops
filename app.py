@@ -212,13 +212,45 @@ st.markdown(f"""
        접힌 카드는 헤더 행만 있으므로 펼친 카드보다 하단 패딩을 작게 둔다. */
     div[class*="st-key-bundle_card_"] {{
         background-color: #FFFFFF;
-        margin-bottom: 8px !important;
-    }}
-    div[class*="st-key-bundle_card_"][class*="_closed"] {{
-        padding-bottom: 14px !important;
+        margin-bottom: 4px !important;
     }}
     div[class*="st-key-bundle_card_"][class*="_open"] {{
         padding-bottom: 26px !important;
+    }}
+    /* 펼친 카드는 그대로 두고, 목록 스크롤의 실제 원인인 "접힌" 카드만 압축한다 —
+       패딩과 위/아래·수정·삭제·펼치기 버튼, 제목 글자 크기를 전부 줄인다. */
+    div[class*="st-key-bundle_card_"][class*="_closed"] {{
+        padding: 11px 17px 9px !important;
+    }}
+    div[class*="st-key-bundle_card_"][class*="_closed"] [data-testid="stMarkdownContainer"] p {{
+        font-size: 13px !important;
+    }}
+    /* 위/아래·펼치기·수정·삭제 버튼 크기는 접힌 카드든 펼친 카드든 항상 동일하게
+       — class*="st-key-bundle_card_"는 _open/_closed 둘 다에 걸리므로 상태와 무관하게
+       적용된다. */
+    div[class*="st-key-bundle_card_"] div[class*="st-key-up_"] button,
+    div[class*="st-key-bundle_card_"] div[class*="st-key-down_"] button,
+    div[class*="st-key-bundle_card_"] div[class*="st-key-toggle_"] button,
+    div[class*="st-key-bundle_card_"] div[class*="st-key-edit_"] button,
+    div[class*="st-key-bundle_card_"] div[class*="st-key-delete_"] button {{
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+        min-height: 20px !important;
+    }}
+    div[class*="st-key-bundle_card_"] div[class*="st-key-up_"] button p,
+    div[class*="st-key-bundle_card_"] div[class*="st-key-down_"] button p,
+    div[class*="st-key-bundle_card_"] div[class*="st-key-toggle_"] button p {{
+        font-size: 13px !important;
+    }}
+    /* 박스 없이 아이콘만 보이는 수정/삭제는 다른 아이콘보다 좀 더 크게 키워서
+       눈에 잘 띄게 한다. 접힌 카드의 제목 글자를 줄이는 규칙([data-testid=
+       "stMarkdownContainer"] p, 이 파일 위쪽)이 명시도(specificity)가 더 높아서
+       버튼 안의 아이콘 <p>까지 덩달아 13px로 눌러버리므로, data-testid 선택자를
+       추가해 명시도를 그 규칙보다 높여야 실제로 적용된다. */
+    div[class*="st-key-bundle_card_"] div[class*="st-key-edit_"] button [data-testid="stMarkdownContainer"] p,
+    div[class*="st-key-bundle_card_"] div[class*="st-key-delete_"] button [data-testid="stMarkdownContainer"] p {{
+        font-size: 18px !important;
     }}
     /* 플레이스 순위 키워드 그룹 카드: 시즌 키워드 묶음 카드와 동일한 시각 언어 재사용.
        같은 키워드를 여러 매장에 등록해두면 카드 하나에 지점별 행이 여러 개 쌓인다. */
@@ -300,7 +332,9 @@ st.markdown(f"""
     }}
     div[class*="st-key-up_"] button,
     div[class*="st-key-down_"] button,
-    div[class*="st-key-toggle_"] button {{
+    div[class*="st-key-toggle_"] button,
+    div[class*="st-key-edit_"] button,
+    div[class*="st-key-delete_"] button {{
         width: 25px !important;
         height: 25px !important;
         min-width: 25px !important;
@@ -310,9 +344,11 @@ st.markdown(f"""
         align-items: center !important;
         justify-content: center !important;
     }}
-    div[class*="st-key-up_"] button [data-testid="stIconMaterial"],
-    div[class*="st-key-down_"] button [data-testid="stIconMaterial"],
-    div[class*="st-key-toggle_"] button [data-testid="stIconMaterial"] {{
+    div[class*="st-key-up_"] button p,
+    div[class*="st-key-down_"] button p,
+    div[class*="st-key-toggle_"] button p,
+    div[class*="st-key-edit_"] button p,
+    div[class*="st-key-delete_"] button p {{
         font-size: 15px !important;
     }}
     div[class*="st-key-up_"] button,
@@ -364,9 +400,12 @@ st.markdown(f"""
         color: #FFFFFF !important;
         font-weight: 600 !important;
     }}
-    div[class*="st-key-edit_"] button {{
-        background-color: #FFFFFF !important;
-        border: 1px solid #CBD5E1 !important;
+    /* 수정/삭제는 감싸는 박스(배경+테두리) 없이 아이콘만 — 대신 아이콘을 outline이
+       아니라 채워진(filled) 스타일로 바꿔서 박스 없이도 잘 보이게 한다. */
+    div[class*="st-key-edit_"] button,
+    div[class*="st-key-delete_"] button {{
+        background-color: transparent !important;
+        border: none !important;
     }}
     div[class*="st-key-toggle_"] button {{
         background-color: #FFFFFF !important;
@@ -375,20 +414,16 @@ st.markdown(f"""
     }}
     div[class*="st-key-edit_"] button p {{
         color: #475569 !important;
-        font-weight: 600 !important;
     }}
-    div[class*="st-key-toggle_"] button p,
-    div[class*="st-key-toggle_"] button span {{
+    div[class*="st-key-edit_"] button p span,
+    div[class*="st-key-delete_"] button p span {{
+        font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24 !important;
+    }}
+    div[class*="st-key-toggle_"] button p {{
         color: #475569 !important;
-        font-weight: 600 !important;
-    }}
-    div[class*="st-key-delete_"] button {{
-        background-color: #FEF2F2 !important;
-        border: 1px solid #FCA5A5 !important;
     }}
     div[class*="st-key-delete_"] button p {{
         color: #DC2626 !important;
-        font-weight: 600 !important;
     }}
 
     /* 플레이스 순위 키워드 삭제 버튼을 오른쪽 끝에 딱 붙는 작은 크기로 줄이고,
@@ -461,7 +496,7 @@ st.markdown(f"""
     }}
 
     /* 묶음 수정 시 나타나는 "키워드 추가" 패널: 기존 키워드 영역과 구분되는 배경/테두리 */
-    div[class*="st-key-edit_panel_"] {{
+    div[class*="st-key-editpanel_"] {{
         background-color: #F7F9FB;
         border: 1px dashed #CBD5E1;
         border-radius: 10px;

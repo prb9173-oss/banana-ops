@@ -606,12 +606,38 @@ with tab_manage:
                             st.error(f"❌ 키워드 추가 중 오류가 발생했습니다: {e}")
 
         with st.container(border=True, key="section_manage_keywords"):
-            st.markdown("#### 📋 추적 키워드 목록")
+            # 시즌 키워드 관리 페이지의 "저장된 시즌 키워드 묶음" 검색창과 동일한 형식
+            # (제목 옆 오른쪽에 라벨 없는 검색창) — 앱 전체에서 이 배치를 일관되게 쓴다.
+            col_title, col_search = st.columns([3, 2], vertical_alignment="center")
+            with col_title:
+                st.markdown("#### 📋 추적 키워드 목록")
+            with col_search:
+                # 키워드가 70개+로 늘어나면서 원하는 걸 찾으려면 계속 스크롤해야 하는
+                # 문제 — 키워드/매장명으로 걸러서 원하는 카드만 바로 보이게 한다.
+                search_query = st.text_input(
+                    "키워드 검색",
+                    placeholder="🔍 키워드 또는 매장명 검색",
+                    key="pr_kw_search",
+                    label_visibility="collapsed",
+                ).strip()
 
             if not keyword_groups:
                 st.info("추적 중인 키워드가 없습니다. 위에서 먼저 추가해 주세요.")
             else:
+                # 순서변경(▲▼)은 검색 여부와 무관하게 항상 전체 목록 기준 group_idx로
+                # 동작해야 하므로(swap_keyword_group_order가 keyword_groups 전체를
+                # 다시 정렬), 목록 자체는 그대로 두고 렌더링만 건너뛰는 방식으로 필터링한다.
+                matched_count = 0
+
                 for group_idx, (keyword_text, rows) in enumerate(keyword_groups):
+                    if search_query:
+                        store_names = " ".join(
+                            (r.get("store_campaigns") or {}).get("store_name", "") for r in rows
+                        )
+                        haystack = f"{keyword_text} {store_names}".lower()
+                        if search_query.lower() not in haystack:
+                            continue
+                    matched_count += 1
                     keyword_ids = [r["id"] for r in rows]
                     # 그룹 내 모든 매장 행은 항상 같은 값을 갖는 게 정상이라(지점별로 다르게
                     # 쓸 일이 없음), 대표로 첫 번째 행 값만 읽어서 그룹 공용 컨트롤에 쓴다.
@@ -707,3 +733,6 @@ with tab_manage:
                                         ).eq("id", kw["id"]).execute()
                                         fetch_all_keywords.clear()
                                         st.rerun()
+
+                if search_query and matched_count == 0:
+                    st.info(f"'{search_query}'와(과) 일치하는 키워드가 없습니다.")

@@ -281,7 +281,7 @@ with st.container(border=True, key="section_add_bundle"):
 with st.container(border=True, key="section_bundle_list"):
     col_title, col_search = st.columns([3, 2], vertical_alignment="center")
     with col_title:
-        st.markdown("#### 📚 저장된 시즌 키워드 묶음")
+        st.markdown("#### 📚 저장된 시즌 키워드")
     with col_search:
         search_term = st.text_input(
             "묶음 검색",
@@ -322,10 +322,10 @@ with st.container(border=True, key="section_bundle_list"):
                             if st.button(":material/arrow_downward:", key=f"down_{bundle['id']}", disabled=(idx == len(bundles) - 1)):
                                 swap_bundle_order(bundle, bundles[idx + 1])
                                 st.rerun()
-                        if st.button("수정", key=f"edit_{bundle['id']}"):
+                        if st.button(":material/edit:", key=f"edit_{bundle['id']}", help="수정"):
                             st.session_state[f"editing_{bundle['id']}"] = not st.session_state.get(f"editing_{bundle['id']}", False)
                         if st.session_state.get("is_admin"):
-                            if st.button("삭제", key=f"delete_{bundle['id']}"):
+                            if st.button(":material/delete:", key=f"delete_{bundle['id']}", help="삭제"):
                                 get_supabase_client().table("season_keyword_bundles").delete().eq("id", bundle["id"]).execute()
                                 st.rerun()
                         toggle_icon = ":material/expand_less:" if is_expanded else ":material/expand_more:"
@@ -334,7 +334,7 @@ with st.container(border=True, key="section_bundle_list"):
                             st.rerun()
 
                 if st.session_state.get(f"editing_{bundle['id']}", False):
-                    with st.container(key=f"edit_panel_{bundle['id']}"):
+                    with st.container(key=f"editpanel_{bundle['id']}"):
                         st.markdown('<div class="edit-panel-label">✏️ 키워드 수정 (쉼표로 구분)</div>', unsafe_allow_html=True)
                         edited_kw_raw = st.text_area(
                             "키워드 (쉼표로 구분)",
