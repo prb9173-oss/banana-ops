@@ -83,7 +83,14 @@ def fetch_first_adgroup(customer_id, api_key, secret_key, ad_type):
     같은 캠페인 안에 대표 광고그룹 말고 다른 운영 중(ELIGIBLE) 광고그룹이 더 있으면
     (예: 보름숲의 "보름숲 통대관", "대관 파워컨텐츠" — 매장 본업과 다른 대관 상품용
     광고그룹) 대표로 삼지 않고 extra_adgroups로 따로 돌려준다 — 호출부에서 플레이스/
-    파워링크/파워컨텐츠 3개 구간과 안 섞이게 맨 아래에 별도 이름으로 보여주기 위함."""
+    파워링크/파워컨텐츠 3개 구간과 안 섞이게 맨 아래에 별도 이름으로 보여주기 위함.
+
+    extra_adgroups는 항상 ELIGIBLE(운영 중)인 것만 포함한다 — 대표 광고그룹이 하나도
+    ELIGIBLE이 없어 전체 목록(상태 무관)으로 폴백하는 경우, 그 폴백 목록의 나머지를
+    그대로 "추가 광고그룹"으로 보여주면 실제로는 꺼져 있는(PAUSED) 광고그룹까지 회의
+    자료에 노출되는 버그가 있었다(2026-07-31, 고집돌우럭 중문점의 실제 status:PAUSED,
+    userLock:true인 유령 광고그룹이 재현) — 대표는 폴백해도 되지만, 추가 목록은 항상
+    ELIGIBLE 필터를 거친다."""
     campaigns, err = _get("/ncc/campaigns", api_key, secret_key, customer_id)
     if err:
         return None, [], err
@@ -99,8 +106,9 @@ def fetch_first_adgroup(customer_id, api_key, secret_key, ad_type):
     if not adgroups:
         return None, [], None
     active_adgroups = [a for a in adgroups if a.get("status") == "ELIGIBLE"]
-    pool = active_adgroups or adgroups
-    return pool[0], pool[1:], None
+    if active_adgroups:
+        return active_adgroups[0], active_adgroups[1:], None
+    return adgroups[0], [], None
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -297,35 +305,76 @@ def render_bid_info(ad_type, adgroup):
     초기화된다(저장 방식은 나중에 별도로 정한다).
     위젯 key는 store_name+ad_type이 아니라 adgroup_id로 고유하게 잡는다 — 보름숲의
     "보름숲 통대관"처럼 같은 store_name·ad_type인 추가 광고그룹이 하나 더 있으면
-    store_name+ad_type만으로는 대표 광고그룹의 입력칸과 key가 겹쳐 버린다."""
+    store_name+ad_type만으로는 대표 광고그룹의 입력칸과 key가 겹쳐 버린다.
+    이 페이지의 목표는 광고 데이터를 한 화면에 컴팩트하게 보여주는 것이라, 평균
+    입찰가·특이사항을 "적는" 입력창 자체는 관리자 모드에서만 그린다 — 일반 사용자는
+    입력 위젯 없이 표/텍스트로 결과값만 보므로 이 칸 때문에 세로로 늘어나지 않는다."""
+    is_admin = st.session_state.get("is_admin")
     adgroup_id = adgroup["nccAdgroupId"]
     bid_amt = adgroup.get("bidAmt", 0)
-    col_bid, col_note = st.columns([1, 2])
-    with col_bid:
-        if ad_type == "플레이스광고":
-            avg_bid = st.number_input(
-                "평균 입찰가(경쟁업계 시세, 직접 입력)", min_value=0, step=10,
-                key=f"cv_avgbid_{adgroup_id}", label_visibility="collapsed",
-            )
-            diff = bid_amt - avg_bid
-            rows = [("현재 입찰가", f"{bid_amt:,}원"), ("평균 입찰가", f"{avg_bid:,}원"), ("차액", f"{diff:,}원")]
-        else:
-            daily_budget = adgroup.get("dailyBudget", 0)
-            rows = [("현재 입찰가", f"{bid_amt:,}원"), ("하루 예산", f"{daily_budget:,}원")]
-        html = f'<table style="width:100%; border-collapse:collapse; border:1px solid {TABLE_BORDER};">'
-        for name, val in rows:
+    avg_key = f"cv_avgbid_{adgroup_id}"
+    note_key = f"cv_note_{adgroup_id}"
+
+    def _build_table(rows):
+        html = f'<table style="border-collapse:collapse; border:1px solid {TABLE_BORDER};">'
+        for name, val, extra in rows:
+            html += '<tr>'
             html += (
-                f'<tr><td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; background:{TABLE_HEADER_BG}; '
+                f'<td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; background:{TABLE_HEADER_BG}; '
                 f'font-weight:600; font-size:12.5px; white-space:nowrap;">{name}</td>'
-                f'<td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; font-size:12.5px;">{val}</td></tr>'
             )
+            if extra is not None:
+                html += f'<td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; font-size:12.5px;">{val}</td>'
+                html += (
+                    f'<td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; font-size:12.5px; '
+                    f'text-align:right;">{extra}</td>'
+                )
+            else:
+                html += (
+                    f'<td colspan="2" style="padding:6px 10px; border:1px solid {TABLE_BORDER}; '
+                    f'font-size:12.5px;">{val}</td>'
+                )
+            html += '</tr>'
         html += '</table>'
-        st.markdown(html, unsafe_allow_html=True)
-    with col_note:
-        st.text_input(
-            "특이사항", key=f"cv_note_{adgroup_id}", placeholder="* 특이사항 - 이번 주 특이사항을 입력하세요",
-            label_visibility="collapsed",
-        )
+        return html
+
+    with st.container(key=f"cv_bid_row_{adgroup_id}"):
+        col_bid, col_note = st.columns([1, 2])
+        with col_bid:
+            if ad_type == "플레이스광고":
+                avg_bid = st.session_state.get(avg_key, 0)
+                diff = bid_amt - avg_bid
+                diff_color = "#E03131" if diff < 0 else "#16181D"
+                diff_html = f'<span style="color:{diff_color};">{diff:,}원</span>'
+                # 관리자 모드에서는 "평균 입찰가" 행을 표에 정적으로 넣는 대신, 표를
+                # 현재입찰가(+차액) 한 줄로 컴팩트하게 줄이고 그 바로 아래에 실제
+                # 입력 위젯을 붙인다 — 예전처럼 입력창을 표 위 별도 블록으로 얹지
+                # 않고, 표가 그 자리(위쪽)를 그대로 차지하도록.
+                rows = [("현재 입찰가", f"{bid_amt:,}원", diff_html)]
+                if not is_admin:
+                    rows.append(("평균 입찰가", f"{avg_bid:,}원", None))
+                st.markdown(_build_table(rows), unsafe_allow_html=True)
+                if is_admin:
+                    st.number_input(
+                        "평균 입찰가", min_value=0, step=10, key=avg_key,
+                    )
+            else:
+                daily_budget = adgroup.get("dailyBudget", 0)
+                rows = [("현재 입찰가", f"{bid_amt:,}원", None), ("하루 예산", f"{daily_budget:,}원", None)]
+                st.markdown(_build_table(rows), unsafe_allow_html=True)
+        with col_note:
+            if is_admin:
+                st.text_input(
+                    "특이사항", key=note_key, placeholder="* 특이사항 - 이번 주 특이사항을 입력하세요",
+                    label_visibility="collapsed",
+                )
+            else:
+                note_text = st.session_state.get(note_key, "").strip()
+                st.markdown(
+                    f'<div style="font-size:13px; color:#16181D; padding-top:8px;">'
+                    f'<b>* 특이사항</b> - {note_text or "없음"}</div>',
+                    unsafe_allow_html=True,
+                )
 
 
 def render_report_body(customer_id, api_key, secret_key, ad_type, adgroup, last_week_start, last_week_end):

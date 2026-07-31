@@ -1,0 +1,35 @@
+name: Ad Performance Check
+
+on:
+  # place_rank_check.yml과 동일하게 GitHub 자체 schedule 대신 cron-job.org가 이
+  # 워크플로우의 workflow_dispatch를 매주 월요일 API로 호출하는 방식으로 처리한다.
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write .streamlit/secrets.toml
+        # 이 스크립트는 계정(매장)별 네이버 검색광고 API 키를 .streamlit/secrets.toml에서
+        # 직접 읽는다(로컬 개발과 동일 방식) — 저장소에는 커밋되지 않는 파일이라, 리포지토리
+        # 시크릿 STREAMLIT_SECRETS_TOML(로컬 secrets.toml 전체 내용)로 실행 시점에 복원한다.
+        run: |
+          mkdir -p .streamlit
+          printf '%s' "$STREAMLIT_SECRETS_TOML" > .streamlit/secrets.toml
+        env:
+          STREAMLIT_SECRETS_TOML: ${{ secrets.STREAMLIT_SECRETS_TOML }}
+
+      - name: Run ad performance check
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/check_ad_performance.py

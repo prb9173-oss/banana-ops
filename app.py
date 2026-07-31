@@ -461,6 +461,27 @@ st.markdown(f"""
     div[data-testid="stSelectboxVirtualDropdown"] div[role="listbox"] {{
         max-height: 180px !important;
     }}
+    /* 입찰가 표 컬럼(cv_bid_row)은 비율 기반 st.columns([1,2])라 화면이 넓을수록
+       표가 불필요하게 같이 넓어졌다 — 표는 고정 폭으로 작게 두고, 특이사항 칸이
+       남는 폭을 전부 가져가게 한다. 두 컬럼 모두 명시적으로 재지정해야
+       한다 — 한쪽만 auto로 바꾸면 다른 쪽이 예전 비율 기반 flex-basis를 그대로
+       써서 합산 폭이 컨테이너보다 미세하게(수 px) 넘쳐 자동으로 줄바꿈되는
+       버그가 났었다(플레이스광고의 평균입찰가 입력칸이 있을 때만 재현됨). */
+    div[class*="st-key-cv_bid_row"] div[data-testid="stColumn"]:first-child {{
+        flex: 0 0 230px !important;
+        width: 230px !important;
+        min-width: 230px !important;
+    }}
+    div[class*="st-key-cv_bid_row"] div[data-testid="stColumn"]:last-child {{
+        flex: 1 1 0% !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }}
+    /* 관리자 모드에서 표 바로 아래 붙는 평균 입찰가 입력창 — 위젯 기본 상단
+       여백을 줄여서 표와 더 가까이 붙게 한다. */
+    div[class*="st-key-cv_avgbid_"] {{
+        margin-top: 2px !important;
+    }}
     /* 수정/삭제는 감싸는 박스(배경+테두리) 없이 아이콘만 — 대신 아이콘을 outline이
        아니라 채워진(filled) 스타일로 바꿔서 박스 없이도 잘 보이게 한다. */
     div[class*="st-key-edit_"] button,
