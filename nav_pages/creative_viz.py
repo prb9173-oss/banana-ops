@@ -504,11 +504,19 @@ st.subheader("광고 소재 및 데이터 시각화")
 # 맨 아래 매장 이동 버튼을 누르면 다음 매장의 자료를 처음부터 봐야 하니, 브라우저
 # 스크롤을 페이지 맨 위로 되돌린다 — 그대로 두면 새 매장 데이터가 로드돼도 스크롤
 # 위치는 그대로라 여전히 맨 아래(다음 매장 이동 버튼 근처)에 머물러 있게 된다.
-# st.markdown에 넣은 <script>는 Streamlit이 실행 안 해줘서, components.html의
-# iframe에서 window.parent를 통해 실제 페이지를 스크롤한다(이 앱의 클립보드
-# 복사 버튼 등에서 이미 쓰던 패턴).
+# Streamlit은 <html>/<body>가 아니라 section[data-testid="stMain"] 안에서 자체
+# 스크롤한다 — document.documentElement.scrollTop = 0은 그 컨테이너를 안 건드려서
+# 효과가 없었다(2026-08-01 실측 확인). st.markdown에 넣은 <script>는 Streamlit이
+# 실행 안 해줘서, components.html의 iframe에서 window.parent를 통해 실제 스크롤
+# 컨테이너를 찾아 스크롤한다(이 앱의 클립보드 복사 버튼 등에서 이미 쓰던 패턴).
 if st.session_state.pop("cv_scroll_top_pending", False):
-    components.html("<script>window.parent.document.documentElement.scrollTop = 0;</script>", height=0)
+    components.html(
+        "<script>"
+        "var m = window.parent.document.querySelector('section[data-testid=\"stMain\"]');"
+        "if (m) { m.scrollTop = 0; }"
+        "</script>",
+        height=0,
+    )
 
 available_accounts = fetch_stores()
 
