@@ -18,6 +18,7 @@ from check_ad_performance import (
     AD_TYPE_CAMPAIGN_TP,
     fetch_daily_stats,
     fetch_first_adgroup,
+    fetch_stores,
     fetch_top_keywords_auto,
     get_naver_accounts,
     get_supabase_client,
@@ -41,7 +42,8 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     client = get_supabase_client()
     accounts = get_naver_accounts()
-    logging.info("대상 계정 %d개, 과거 %d주 백필", len(accounts), BACKFILL_WEEKS)
+    stores = fetch_stores(client)
+    logging.info("대상 매장 %d개, 과거 %d주 백필", len(stores), BACKFILL_WEEKS)
 
     today = datetime.date.today()
     this_monday = today - datetime.timedelta(days=today.weekday())
@@ -49,12 +51,19 @@ def main():
     backfill_start = last_completed_monday - datetime.timedelta(weeks=BACKFILL_WEEKS - 1)
     backfill_end = last_completed_monday + datetime.timedelta(days=6)  # 지난주 일요일
 
-    for account_key, section in accounts.items():
+    for store in stores:
+        store_name = store["store_name"]
+        account_key = store["naver_account_key"]
+        section = accounts.get(account_key)
+        if not section:
+            logging.warning("%s: 계정 '%s'을 secrets.toml에서 못 찾음", store_name, account_key)
+            continue
         customer_id, api_key, secret_key = section["customer_id"], section["api_key"], section["secret_key"]
+
         for ad_type in AD_TYPE_CAMPAIGN_TP:
-            main_ag, extra_ags, err = fetch_first_adgroup(customer_id, api_key, secret_key, ad_type)
+            main_ag, extra_ags, err = fetch_first_adgroup(customer_id, api_key, secret_key, ad_type, store_name)
             if err:
-                logging.warning("%s %s 대표 광고그룹 조회 실패: %s", account_key, ad_type, err)
+                logging.warning("%s %s 대표 광고그룹 조회 실패: %s", store_name, ad_type, err)
                 continue
             if not main_ag:
                 continue
@@ -70,7 +79,7 @@ def main():
                     if err:
                         logging.warning(
                             "daily stats 백필 실패 %s/%s (%s~%s): %s",
-                            account_key, adgroup_id, chunk_start, chunk_end, err,
+                            store_name, adgroup_id, chunk_start, chunk_end, err,
                         )
                     else:
                         upsert_daily_stats(client, adgroup_id, daily_rows)
@@ -88,13 +97,13 @@ def main():
                     )
                     if err:
                         logging.warning(
-                            "keywords 백필 실패 %s/%s %s: %s", account_key, adgroup_id, week_monday, err,
+                            "keywords 백필 실패 %s/%s %s: %s", store_name, adgroup_id, week_monday, err,
                         )
                         continue
                     replace_top_keywords(client, adgroup_id, week_monday, kw_rows)
                     time.sleep(0.3)
 
-        logging.info("%s 백필 완료", account_key)
+        logging.info("%s 백필 완료", store_name)
 
 
 if __name__ == "__main__":

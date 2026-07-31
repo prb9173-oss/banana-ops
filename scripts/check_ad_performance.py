@@ -19,6 +19,14 @@ AD_TYPE_CAMPAIGN_TP = {
     "파워컨텐츠광고": ["CONTENTS", "POWER_CONTENT", "POWER_CONTENTS", "INFORMATION"],
 }
 
+# 캠페인 이름 규칙: "{매장명} {이 라벨}" (예: "선물가게바나나 함덕점 파워컨텐츠") —
+# 사용자가 네이버 광고관리센터에서 실제로 이렇게 이름을 맞춰뒀다(2026-07-31 확인).
+AD_TYPE_LABEL = {
+    "플레이스광고": "플레이스",
+    "파워링크광고": "파워링크",
+    "파워컨텐츠광고": "파워컨텐츠",
+}
+
 
 def get_supabase_client():
     url = os.environ.get("SUPABASE_URL")
@@ -32,8 +40,11 @@ def get_supabase_client():
 
 def get_naver_accounts():
     """.streamlit/secrets.toml에서 customer_id/api_key/secret_key를 가진 섹션을 전부
-    찾는다 — creative_viz.py의 계정 드롭다운(available_accounts)과 동일한 기준이라,
-    두 곳의 "매장 목록"이 항상 같은 소스에서 나온다."""
+    찾는다 — 매장이 아니라 "네이버 광고 계정"(고집돌우럭 중문점 계정 하나에 함덕점·
+    와인창고 함덕점까지 3개 매장이 같이 걸려있는 식) 기준이라, 계정별 API 인증 정보를
+    찾을 때만 쓴다. 실제 "몇 개 매장이 있는지"는 fetch_stores()의 store_campaigns를
+    따른다 — 2026-07-31에 계정 기준으로 매장을 순회하다가 계정 하나에 여러 매장이
+    묶인 경우 1개만 보이고 나머지가 통째로 누락되는 버그를 발견해 이렇게 분리했다."""
     import toml
     secrets = toml.load(".streamlit/secrets.toml")
     accounts = {}
@@ -41,6 +52,14 @@ def get_naver_accounts():
         if isinstance(section, dict) and {"customer_id", "api_key", "secret_key"} <= section.keys():
             accounts[key] = section
     return accounts
+
+
+def fetch_stores(client):
+    """store_campaigns(place_rank.py 등 이미 이 앱 전체가 쓰는 매장 마스터 테이블)에서
+    매장 목록을 가져온다. 한 계정(naver_account_key)에 매장이 여러 개 묶여 있을 수
+    있으므로, 광고 데이터 수집은 반드시 이 매장 단위로 순회해야 한다."""
+    res = client.table("store_campaigns").select("*").order("display_order").execute()
+    return res.data or []
 
 
 def make_signature(timestamp, method, uri, secret_key):
@@ -72,28 +91,46 @@ def _get(uri, api_key, secret_key, customer_id, params=None):
     return r.json(), None
 
 
-def fetch_first_adgroup(customer_id, api_key, secret_key, ad_type):
-    """creative_viz.py의 동명 함수와 동일 — extra_adgroups는 항상 ELIGIBLE만 포함한다
-    (2026-07-31에 발견: 대표가 없어 상태 무관 전체 목록으로 폴백할 때 그 나머지까지
-    "추가 광고그룹"으로 보여주면 PAUSED된 유령 광고그룹이 노출되는 버그가 있었음)."""
+def fetch_first_adgroup(customer_id, api_key, secret_key, ad_type, store_name):
+    """이 매장·광고유형의 캠페인을 이름으로 정확히 찾는다 — "{매장명} {라벨}"
+    (예: "고집돌우럭 함덕점 플레이스"). 2026-07-31 이전에는 계정 안의 해당 유형
+    캠페인 중 아무거나(API 응답 순서상 첫 번째)를 골랐는데, 계정 하나에 매장이 여러
+    개 묶여 있으면(예: "고집돌우럭 중문점" 계정에 중문점·함덕점·와인창고 함덕점 3개
+    매장의 플레이스 캠페인이 다 있음) 실제로는 매번 같은 매장 하나만 보이고 나머지
+    2개는 화면에 아예 나타나지 않는 버그였다. 사용자가 네이버 광고관리센터에서
+    캠페인 이름을 "매장명 + 유형"으로 통일해뒀으므로, 이름 매칭이 계정-매장 다대다
+    관계를 정확히 풀어준다.
+
+    그 캠페인 안에서, 캠페인명과 완전히 같은 이름의 광고그룹을 "대표"로 삼는다 —
+    예를 들어 "보름숲 파워링크" 캠페인 안에는 "보름숲 파워링크"(본업)와
+    "보름숲 통대관"(대관 부업) 두 광고그룹이 있는데, 앞의 것만 대표이고 뒤의 것은
+    부가(extra)로 따로 돌려준다. 수동으로 꺼둔(userLock=true) 광고그룹은 대표든
+    부가든 제외한다 — 단, "예산 소진으로 일시중지"(status=PAUSED,
+    statusReason=GROUP_LIMITED_BY_BUDGET)는 정상적인 운영 중 상태라 userLock이
+    아니면 그대로 포함한다(2026-07-31에 이 둘을 혼동해서 정상 데이터를 문제처럼
+    오판한 적이 있음 — status가 아니라 userLock으로만 판단할 것)."""
     campaigns, err = _get("/ncc/campaigns", api_key, secret_key, customer_id)
     if err:
         return None, [], err
     target_types = AD_TYPE_CAMPAIGN_TP[ad_type]
-    matched = [c for c in campaigns if c.get("campaignTp") in target_types]
-    if not matched:
+    target_name = f"{store_name} {AD_TYPE_LABEL[ad_type]}"
+    campaign = next(
+        (c for c in campaigns if c.get("campaignTp") in target_types and c.get("name") == target_name),
+        None,
+    )
+    if not campaign:
         return None, [], None
-    active_campaigns = [c for c in matched if c.get("status") == "ELIGIBLE"]
-    chosen_campaign = (active_campaigns or matched)[0]
-    adgroups, err = _get("/ncc/adgroups", api_key, secret_key, customer_id, {"nccCampaignId": chosen_campaign["nccCampaignId"]})
+    adgroups, err = _get("/ncc/adgroups", api_key, secret_key, customer_id, {"nccCampaignId": campaign["nccCampaignId"]})
     if err:
         return None, [], err
     if not adgroups:
         return None, [], None
-    active_adgroups = [a for a in adgroups if a.get("status") == "ELIGIBLE"]
-    if active_adgroups:
-        return active_adgroups[0], active_adgroups[1:], None
-    return adgroups[0], [], None
+    not_locked = [a for a in adgroups if not a.get("userLock", False)]
+    pool = not_locked or adgroups
+    main_matches = [a for a in pool if a.get("name") == target_name]
+    main = main_matches[0] if main_matches else pool[0]
+    extras = [a for a in pool if a is not main]
+    return main, extras, None
 
 
 def fetch_daily_stats(api_key, secret_key, customer_id, adgroup_id, start_date, end_date):
@@ -153,9 +190,12 @@ def fetch_top_keywords_auto(api_key, secret_key, customer_id, adgroup_id, start_
     return ranked[:10], None
 
 
-def upsert_adgroup_snapshot(client, account_key, ad_type, role, ag, week_monday):
+def upsert_adgroup_snapshot(client, store_name, ad_type, role, ag, week_monday):
+    # "account_key" 컬럼명은 그대로 두되(스키마 변경 없이), 이제 네이버 광고 계정이
+    # 아니라 매장명을 저장한다 — 계정 하나에 매장이 여러 개 묶일 수 있어 계정 단위로는
+    # 구분이 안 됐던 문제를 매장 단위로 바꾸면서 값의 의미만 바뀌었다(2026-07-31).
     client.table("creative_adgroup_snapshot").upsert({
-        "account_key": account_key,
+        "account_key": store_name,
         "ad_type": ad_type,
         "adgroup_id": ag["nccAdgroupId"],
         "adgroup_name": ag.get("name"),
@@ -193,20 +233,20 @@ def replace_top_keywords(client, adgroup_id, week_monday, keyword_rows):
     client.table("creative_top_keywords").insert(payload).execute()
 
 
-def process_adgroup(client, account_key, ad_type, role, ag, week_monday, week_sunday, daily_start, api_key, secret_key, customer_id):
+def process_adgroup(client, store_name, ad_type, role, ag, week_monday, week_sunday, daily_start, api_key, secret_key, customer_id):
     adgroup_id = ag["nccAdgroupId"]
-    upsert_adgroup_snapshot(client, account_key, ad_type, role, ag, week_monday)
+    upsert_adgroup_snapshot(client, store_name, ad_type, role, ag, week_monday)
 
     daily_rows, err = fetch_daily_stats(api_key, secret_key, customer_id, adgroup_id, daily_start, week_sunday)
     if err:
-        logging.warning("daily stats 실패 %s/%s: %s", account_key, adgroup_id, err)
+        logging.warning("daily stats 실패 %s/%s: %s", store_name, adgroup_id, err)
     else:
         upsert_daily_stats(client, adgroup_id, daily_rows)
 
     if ad_type != "플레이스광고":
         kw_rows, err = fetch_top_keywords_auto(api_key, secret_key, customer_id, adgroup_id, week_monday, week_sunday)
         if err:
-            logging.warning("top keywords 실패 %s/%s: %s", account_key, adgroup_id, err)
+            logging.warning("top keywords 실패 %s/%s: %s", store_name, adgroup_id, err)
         else:
             replace_top_keywords(client, adgroup_id, week_monday, kw_rows)
 
@@ -215,7 +255,8 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     client = get_supabase_client()
     accounts = get_naver_accounts()
-    logging.info("대상 계정 %d개", len(accounts))
+    stores = fetch_stores(client)
+    logging.info("대상 매장 %d개 (계정 %d개에 분산)", len(stores), len(accounts))
 
     today = datetime.date.today()
     this_monday = today - datetime.timedelta(days=today.weekday())
@@ -223,28 +264,35 @@ def main():
     week_sunday = week_monday + datetime.timedelta(days=6)
     daily_start = week_monday - datetime.timedelta(weeks=3)  # 4주 표를 위한 롤링 시작점
 
-    for account_key, section in accounts.items():
+    for store in stores:
+        store_name = store["store_name"]
+        account_key = store["naver_account_key"]
+        section = accounts.get(account_key)
+        if not section:
+            logging.warning("%s: 계정 '%s'을 secrets.toml에서 못 찾음", store_name, account_key)
+            continue
         customer_id, api_key, secret_key = section["customer_id"], section["api_key"], section["secret_key"]
+
         for ad_type in AD_TYPE_CAMPAIGN_TP:
-            main_ag, extra_ags, err = fetch_first_adgroup(customer_id, api_key, secret_key, ad_type)
+            main_ag, extra_ags, err = fetch_first_adgroup(customer_id, api_key, secret_key, ad_type, store_name)
             if err:
-                logging.warning("%s %s 대표 광고그룹 조회 실패: %s", account_key, ad_type, err)
+                logging.warning("%s %s 대표 광고그룹 조회 실패: %s", store_name, ad_type, err)
                 continue
             if not main_ag:
-                continue  # 이 매장은 해당 광고 유형 자체가 없음(정상)
+                continue  # 이 매장은 해당 광고 유형 캠페인 자체가 없음(정상)
 
             process_adgroup(
-                client, account_key, ad_type, "main", main_ag,
+                client, store_name, ad_type, "main", main_ag,
                 week_monday, week_sunday, daily_start, api_key, secret_key, customer_id,
             )
             time.sleep(0.3)
             for extra_ag in extra_ags:
                 process_adgroup(
-                    client, account_key, ad_type, "extra", extra_ag,
+                    client, store_name, ad_type, "extra", extra_ag,
                     week_monday, week_sunday, daily_start, api_key, secret_key, customer_id,
                 )
                 time.sleep(0.3)
-        logging.info("%s 완료", account_key)
+        logging.info("%s 완료", store_name)
 
 
 if __name__ == "__main__":

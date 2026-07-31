@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import datetime
 import pandas as pd
 import altair as alt
@@ -33,23 +34,27 @@ def month_week_label(monday):
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def fetch_first_adgroup(account_key, ad_type):
-    """creative_adgroup_snapshot 캐시 테이블에서 이 계정·광고유형의 대표/부가
+def fetch_first_adgroup(store_name, ad_type):
+    """creative_adgroup_snapshot 캐시 테이블에서 이 매장·광고유형의 대표/부가
     광고그룹을 가져온다 — 2026-07-31부터 라이브 API 호출 없이 매주 월요일 자동
     수집 스크립트(scripts/check_ad_performance.py)가 채워둔 값만 읽는다(회의 중
     페이지를 빠르게 넘겨볼 때 API 왕복 지연이 없도록).
 
+    DB 컬럼명은 여전히 "account_key"이지만(스키마 변경 없이 값의 의미만 바꿈),
+    이제 네이버 광고 계정이 아니라 매장명을 저장한다 — 계정 하나(예: "고집돌우럭
+    중문점")에 실제로는 중문점·함덕점·와인창고 함덕점 3개 매장의 캠페인이 같이
+    걸려 있는 경우가 있어서, 계정 단위로는 나머지 매장이 통째로 안 보이는 버그가
+    있었다(2026-07-31 발견). 수집 스크립트가 캠페인 이름("{매장명} {유형}")으로
+    매장을 정확히 구분해 저장하므로, 여기서도 매장명으로 조회한다.
+
     "가장 최신 week_monday" 행을 대표/부가 판단 기준으로 삼는다 — 현재 입찰가는
-    조회 중인 주차와 무관하게 항상 최신값을 보여준다(라이브 API였을 때도 조회
-    주차와 무관하게 "현재" 입찰가만 보여줬으므로 동일한 동작). extra_adgroups는
-    role='extra'인 행 전부 — 자동 수집 스크립트가 이미 ELIGIBLE만 걸러서 저장하므로
-    (2026-07-31에 발견한 PAUSED 유령 광고그룹 버그 수정 로직 그대로) 여기서 다시
-    걸러낼 필요는 없다."""
+    조회 중인 주차와 무관하게 항상 최신값을 보여준다. extra_adgroups는
+    role='extra'인 행 전부(예: "보름숲 파워링크" 캠페인 안의 "보름숲 통대관")."""
     client = get_supabase_client()
     res = (
         client.table("creative_adgroup_snapshot")
         .select("*")
-        .eq("account_key", account_key)
+        .eq("account_key", store_name)
         .eq("ad_type", ad_type)
         .order("week_monday", desc=True)
         .execute()
@@ -227,6 +232,31 @@ def fetch_top_keywords(adgroup_id, week_monday):
     return with_ctr_cpc(df.assign(총비용=0))[["키워드", "노출수", "클릭수", "클릭률(%)"]], None
 
 
+def save_top_keywords(adgroup_id, week_monday, rows):
+    """플레이스광고 상위 클릭 10개 키워드 — 관리자가 화면에서 입력한 값을 저장한다.
+    scripts/check_ad_performance.py의 replace_top_keywords()와 동일한 방식(그 주차
+    기존 행을 전부 지우고 다시 넣음)이라 몇 개를 입력하든 순서/개수가 항상 맞는다."""
+    client = get_supabase_client()
+    client.table("creative_top_keywords") \
+        .delete().eq("adgroup_id", adgroup_id).eq("week_monday", week_monday.isoformat()).execute()
+    if rows:
+        payload = [
+            {
+                "adgroup_id": adgroup_id,
+                "week_monday": week_monday.isoformat(),
+                "display_order": i,
+                "keyword": r["키워드"],
+                # 숫자 칸도 셀을 지우면 None이 될 수 있어(빈 문자열이 아니라) 0으로
+                # 대체 — int(None)은 그냥 에러가 난다.
+                "impressions": int(r["노출수"] or 0),
+                "clicks": int(r["클릭수"] or 0),
+            }
+            for i, r in enumerate(rows)
+        ]
+        client.table("creative_top_keywords").insert(payload).execute()
+    fetch_top_keywords.clear()
+
+
 @st.cache_data(ttl=30, show_spinner=False)
 def fetch_admin_note(adgroup_id, week_monday):
     """관리자가 입력하는 평균입찰가/특이사항 — creative_admin_notes에서 그 주(week_monday)
@@ -348,6 +378,39 @@ def render_bid_info(ad_type, adgroup, week_monday):
                 )
 
 
+def render_place_keyword_editor(adgroup_id, week_monday, existing_df):
+    """플레이스광고 상위 클릭 10개 키워드 — 관리자가 st.data_editor(엑셀처럼 셀
+    단위로 편집 가능한 표)로 직접 입력한다. API가 이 항목만 기간 조회를 지원하지
+    않아서 유일하게 수동 입력이 필요한 칸이다. 표 자체는 st.markdown 기반 HTML이
+    아니라 진짜 Streamlit 위젯이라 raw <div>로 표를 흉내 내려다 겪었던 collapse
+    버그(2026-07-31, 평균입찰가 입력 UI 항목 참고)가 여기서는 발생하지 않는다."""
+    if existing_df is not None and not existing_df.empty:
+        rows = existing_df[["키워드", "노출수", "클릭수"]].to_dict("records")
+    else:
+        rows = []
+    rows += [{"키워드": "", "노출수": 0, "클릭수": 0}] * (10 - len(rows))
+    df = pd.DataFrame(rows[:10])
+
+    editor_key = f"cv_kwedit_{adgroup_id}_{week_monday.isoformat()}"
+    edited = st.data_editor(
+        df, hide_index=True, num_rows="fixed", key=editor_key,
+        column_config={
+            "노출수": st.column_config.NumberColumn(min_value=0, step=1),
+            "클릭수": st.column_config.NumberColumn(min_value=0, step=1),
+        },
+    )
+    if st.button("저장", key=f"cv_kwsave_{adgroup_id}_{week_monday.isoformat()}", width="stretch"):
+        # r["키워드"]가 None일 수 있다 — 셀을 지우면 빈 문자열이 아니라 None이 되는데,
+        # str(None)은 "None"이라는 글자라서 마치 값이 있는 것처럼 잘못 걸러지지 않게
+        # r.get(...)의 falsy 여부를 먼저 확인한다(2026-07-31, 지운 행이 안 지워지는
+        # 버그로 발견).
+        clean_rows = [r for r in edited.to_dict("records") if r.get("키워드") and str(r["키워드"]).strip()]
+        clean_rows.sort(key=lambda r: r["클릭수"] or 0, reverse=True)
+        save_top_keywords(adgroup_id, week_monday, clean_rows)
+        st.success("저장했습니다.")
+        st.rerun()
+
+
 def render_report_body(ad_type, adgroup, last_week_start, last_week_end):
     """입찰가 박스 + 일별/주간/Top10 표·차트 3분할 — 대표 광고그룹이든, 보름숲의
     "보름숲 통대관"처럼 별도로 보여주는 추가 광고그룹이든 똑같이 이 본문을 쓴다."""
@@ -395,42 +458,62 @@ def render_report_body(ad_type, adgroup, last_week_start, last_week_end):
 
     with col_keywords:
         st.markdown("**상위 클릭 10개 키워드**")
-        if top_keywords is not None and not top_keywords.empty:
+        if ad_type == "플레이스광고" and st.session_state.get("is_admin"):
+            render_place_keyword_editor(adgroup_id, last_week_start, top_keywords)
+        elif top_keywords is not None and not top_keywords.empty:
             render_html_table(top_keywords)
         else:
             st.info("데이터가 없습니다.")
 
 
-def render_ad_type_report(account_key, ad_type, label, last_week_start, last_week_end):
+def render_ad_type_report(store_name, ad_type, label, section_key, last_week_start, last_week_end):
     """플레이스/파워링크/파워컨텐츠 3개 구간 중 하나를 그린다. 대표 광고그룹 외에
-    같은 계정에 더 있는 추가(대관 등) 광고그룹은 여기서 안 그리고 그대로 돌려줘서,
-    호출부가 페이지 맨 아래에 별도 이름으로 몰아서 보여줄 수 있게 한다."""
-    st.markdown(f"### {label}")
-    adgroup, extra_adgroups, err = fetch_first_adgroup(account_key, ad_type)
-    if err:
-        st.error(f"❌ {label} 데이터를 가져오는 중 오류가 발생했습니다: {err}")
-        return []
-    if not adgroup:
-        st.info(f"이 계정에는 {label}가 없습니다. (아직 자동 수집이 안 됐을 수도 있어요 — 매주 월요일 수집됩니다.)")
-        return []
+    같은 캠페인에 더 있는 추가(대관 등) 광고그룹은 여기서 안 그리고 그대로 돌려줘서,
+    호출부가 페이지 맨 아래에 별도 이름으로 몰아서 보여줄 수 있게 한다.
+    이 매장에 그 광고 유형 캠페인 자체가 없으면 제목·테두리 박스까지 통째로 안
+    그린다(2026-07-31, 빈 제목만 남는 대신 완전히 생략해달라는 요청) — 그래서
+    st.container(border=True)를 호출부가 아니라 여기서 직접 만든다."""
+    adgroup, extra_adgroups, err = fetch_first_adgroup(store_name, ad_type)
+    if not err and not adgroup:
+        return []  # 캠페인 자체가 없음 — 제목/박스 없이 완전히 생략
 
-    render_report_body(ad_type, adgroup, last_week_start, last_week_end)
+    with st.container(border=True, key=section_key):
+        st.markdown(f"### {label}")
+        if err:
+            st.error(f"❌ {label} 데이터를 가져오는 중 오류가 발생했습니다: {err}")
+            return []
+        render_report_body(ad_type, adgroup, last_week_start, last_week_end)
     return [(ad_type, ag) for ag in extra_adgroups]
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_stores():
+    """store_campaigns(place_rank.py 등 앱 전체가 쓰는 매장 마스터 테이블)에서 매장
+    목록을 가져온다. 예전엔 .streamlit/secrets.toml의 네이버 광고 계정(7개)을 그대로
+    "매장" 선택지로 썼는데, 계정 하나에 매장이 여러 개 묶인 경우(예: "고집돌우럭
+    중문점" 계정에 중문점·함덕점·와인창고 함덕점 3개 매장) 나머지 매장이 화면에
+    아예 안 보이는 버그가 있었다(2026-07-31 발견) — 이제 실제 매장 단위(12개)로
+    보여준다."""
+    client = get_supabase_client()
+    res = client.table("store_campaigns").select("store_name").order("display_order").execute()
+    return [r["store_name"] for r in (res.data or [])]
 
 
 st.subheader("광고 소재 및 데이터 시각화")
 
-available_accounts = []
-try:
-    for k in st.secrets.keys():
-        section = st.secrets[k]
-        if hasattr(section, "get") and "customer_id" in section and "api_key" in section and "secret_key" in section:
-            available_accounts.append(k)
-except Exception:
-    pass
+# 맨 아래 매장 이동 버튼을 누르면 다음 매장의 자료를 처음부터 봐야 하니, 브라우저
+# 스크롤을 페이지 맨 위로 되돌린다 — 그대로 두면 새 매장 데이터가 로드돼도 스크롤
+# 위치는 그대로라 여전히 맨 아래(다음 매장 이동 버튼 근처)에 머물러 있게 된다.
+# st.markdown에 넣은 <script>는 Streamlit이 실행 안 해줘서, components.html의
+# iframe에서 window.parent를 통해 실제 페이지를 스크롤한다(이 앱의 클립보드
+# 복사 버튼 등에서 이미 쓰던 패턴).
+if st.session_state.pop("cv_scroll_top_pending", False):
+    components.html("<script>window.parent.document.documentElement.scrollTop = 0;</script>", height=0)
+
+available_accounts = fetch_stores()
 
 if not available_accounts:
-    st.warning("등록된 광고 계정이 없습니다. `.streamlit/secrets.toml`에 계정을 먼저 등록해 주세요.")
+    st.warning("등록된 매장이 없습니다. `store_campaigns` 테이블에 매장을 먼저 등록해 주세요.")
 else:
     if "cv_account_select" not in st.session_state:
         st.session_state["cv_account_select"] = available_accounts[0]
@@ -438,6 +521,10 @@ else:
     def _shift_account(delta):
         idx = available_accounts.index(st.session_state["cv_account_select"])
         st.session_state["cv_account_select"] = available_accounts[(idx + delta) % len(available_accounts)]
+
+    def _shift_account_and_scroll_top(delta):
+        _shift_account(delta)
+        st.session_state["cv_scroll_top_pending"] = True
 
     # 회의 중에 매장을 하나씩 넘겨가며 보는 용도라, 드롭다운은 그대로 두고 좌우
     # 버튼으로도 클릭 한 번에 다음/이전 매장으로 바로 넘어가게 한다 — place_rank.py의
@@ -468,7 +555,7 @@ else:
             st.button("◀", key="cv_account_prev", on_click=_shift_account, args=(-1,), width="stretch")
         with col_acc_select:
             st.selectbox(
-                "광고 계정", options=available_accounts, key="cv_account_select", label_visibility="collapsed",
+                "매장", options=available_accounts, key="cv_account_select", label_visibility="collapsed",
             )
         with col_acc_next:
             st.button("▶", key="cv_account_next", on_click=_shift_account, args=(1,), width="stretch")
@@ -492,25 +579,45 @@ else:
 
     extra_adgroups = []
 
-    with st.container(border=True, key="section_report_place"):
-        extra_adgroups += render_ad_type_report(
-            selected_account, "플레이스광고", "플레이스 광고", week_monday, week_sunday
-        ) or []
+    extra_adgroups += render_ad_type_report(
+        selected_account, "플레이스광고", f"{selected_account} 플레이스 광고",
+        "section_report_place", week_monday, week_sunday,
+    ) or []
 
-    with st.container(border=True, key="section_report_weblink"):
-        extra_adgroups += render_ad_type_report(
-            selected_account, "파워링크광고", "파워링크 광고", week_monday, week_sunday
-        ) or []
+    extra_adgroups += render_ad_type_report(
+        selected_account, "파워링크광고", f"{selected_account} 파워링크 광고",
+        "section_report_weblink", week_monday, week_sunday,
+    ) or []
 
-    with st.container(border=True, key="section_report_contents"):
-        extra_adgroups += render_ad_type_report(
-            selected_account, "파워컨텐츠광고", "파워컨텐츠 광고", week_monday, week_sunday
-        ) or []
+    extra_adgroups += render_ad_type_report(
+        selected_account, "파워컨텐츠광고", f"{selected_account} 파워컨텐츠 광고",
+        "section_report_contents", week_monday, week_sunday,
+    ) or []
 
     # 매장 본업 3구간(플레이스/파워링크/파워컨텐츠)과 섞이면 헷갈리니, 보름숲의
     # "보름숲 통대관"·"대관 파워컨텐츠"처럼 계정에 딸린 추가(대관 등) 광고그룹은
     # 맨 아래에 실제 광고그룹 이름 그대로 따로 몰아서 보여준다.
     for ad_type, ag in extra_adgroups:
         with st.container(border=True, key=f"section_report_extra_{ag['nccAdgroupId']}"):
-            st.markdown(f"### 🏛 {ag.get('name') or '추가 광고그룹'}")
+            st.markdown(f"### {ag.get('name') or '추가 광고그룹'}")
             render_report_body(ad_type, ag, week_monday, week_sunday)
+
+    # 회의 중 자료를 끝까지 읽고 나면 다음 매장으로 넘기기 위해 맨 위로 다시
+    # 스크롤해야 하는 게 불편하다는 요청(2026-07-31) — 맨 아래에도 매장 이동
+    # 버튼을 둔다. 매장명 텍스트 없이 ◀▶ 버튼만(선택은 위 드롭다운에서 이미 하니
+    # 여기선 그냥 순수 이동 기능만). 위 버튼과 달리 클릭 후 페이지 맨 위로
+    # 스크롤도 같이 시켜서(_shift_account_and_scroll_top) 다음 매장 자료를
+    # 처음부터 보게 한다 — 위 버튼은 이미 맨 위에 있으니 그럴 필요 없음.
+    st.divider()
+    with st.container(key="cv_nav_row_bottom"):
+        col_bottom_prev, col_bottom_next = st.columns([0.5, 0.5])
+        with col_bottom_prev:
+            st.button(
+                "◀", key="cv_account_prev_bottom",
+                on_click=_shift_account_and_scroll_top, args=(-1,), width="stretch",
+            )
+        with col_bottom_next:
+            st.button(
+                "▶", key="cv_account_next_bottom",
+                on_click=_shift_account_and_scroll_top, args=(1,), width="stretch",
+            )
