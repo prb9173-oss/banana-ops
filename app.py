@@ -411,6 +411,7 @@ st.markdown(f"""
         height: 25px !important;
         min-width: 25px !important;
         min-height: 25px !important;
+        margin-top: 8px !important;
         padding: 0 !important;
         display: flex !important;
         align-items: center !important;
@@ -427,6 +428,38 @@ st.markdown(f"""
         color: #FFFFFF !important;
         font-weight: 600 !important;
         font-size: 13px !important;
+    }}
+    /* cv_nav_row: 버튼 컬럼은 내용물(25px 버튼) 크기에 딱 맞추고 드롭다운 두 개만
+       고정 폭을 줘서, 넓은 모니터에서도 버튼이 드롭다운/텍스트와 멀리 떨어지지
+       않게 한다(예전 비율 기반 st.columns는 화면이 넓을수록 버튼 주변 여백도
+       같이 넓어지는 문제가 있었음). */
+    div[class*="st-key-cv_nav_row"] div[data-testid="stHorizontalBlock"] {{
+        gap: 0.5rem !important;
+    }}
+    div[class*="st-key-cv_nav_row"] div[data-testid="stColumn"] {{
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: auto !important;
+    }}
+    div[class*="st-key-cv_nav_row"] div[data-testid="stColumn"]:has(div[class*="st-key-cv_account_select"]) {{
+        flex: 0 0 200px !important;
+        width: 200px !important;
+    }}
+    div[class*="st-key-cv_nav_row"] div[data-testid="stColumn"]:has(div[class*="st-key-cv_week_monday"]) {{
+        flex: 0 0 160px !important;
+        width: 160px !important;
+    }}
+    /* 매장 그룹(◀드롭다운▶)과 주차 그룹(◀드롭다운▶) 사이 여백은 주차 그룹의
+       ◀ 버튼 컬럼에 줘야 두 그룹 "사이"에 들어간다 — 드롭다운 컬럼에 주면 그
+       그룹 안의 ◀버튼-드롭다운 간격만 벌어지고 그룹 경계는 그대로라 오히려
+       드롭다운 좌우 간격이 서로 달라 보이는 버그가 났었다. */
+    div[class*="st-key-cv_nav_row"] div[data-testid="stColumn"]:has(div[class*="st-key-cv_week_prev"]) {{
+        margin-left: 16px !important;
+    }}
+    /* selectbox 드롭다운 팝업(포털이라 특정 위젯만 콕 집어 타겟팅 불가, 앱 전체
+       적용) 세로 길이를 줄여서 목록이 많아도 화면을 과하게 덮지 않게 한다. */
+    div[data-testid="stSelectboxVirtualDropdown"] div[role="listbox"] {{
+        max-height: 180px !important;
     }}
     /* 수정/삭제는 감싸는 박스(배경+테두리) 없이 아이콘만 — 대신 아이콘을 outline이
        아니라 채워진(filled) 스타일로 바꿔서 박스 없이도 잘 보이게 한다. */

@@ -183,7 +183,14 @@ def render_dual_axis_chart(df, x_col):
     "노출수"/"클릭수" 축 제목을 크게 세로로 박아두는 대신, 차트 아래 작은 범례로만
     표시한다. Vega-Lite 자체 범례(legend=)를 좁은 차트 폭 안에 한글로 넣으면 항목
     두 개가 겹쳐서 깨지는 걸 확인해서, 대신 직접 만든 작은 HTML 범례를 쓴다."""
-    base = alt.Chart(df).encode(x=alt.X(f"{x_col}:N", sort=None, title=None))
+    base = alt.Chart(df).encode(
+        x=alt.X(
+            f"{x_col}:N",
+            sort=None,
+            title=None,
+            axis=alt.Axis(labelAngle=0, labelFontSize=10),
+        )
+    )
     bars = base.mark_bar(size=10, color="#3182F6").encode(
         y=alt.Y("노출수:Q", axis=alt.Axis(title=None)),
         tooltip=[x_col, "노출수"],
@@ -217,10 +224,11 @@ def build_weekly_table(daily_df):
     # 깨진다 — month/day 정수를 직접 꺼내 조합한다.
     def _fmt(d):
         return f"{d.month}.{d.day}"
+    weekly["주차"] = weekly["주 시작"].apply(month_week_label)
     weekly["기간"] = weekly["주 시작"].apply(
         lambda start: f"{month_week_label(start)} ({_fmt(start)}~{_fmt(start + datetime.timedelta(days=6))})"
     )
-    return with_ctr_cpc(weekly)[["기간", "노출수", "클릭수", "클릭률(%)", "평균 CPC", "총비용"]]
+    return with_ctr_cpc(weekly)[["기간", "주차", "노출수", "클릭수", "클릭률(%)", "평균 CPC", "총비용"]]
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -360,8 +368,8 @@ def render_report_body(customer_id, api_key, secret_key, ad_type, adgroup, last_
         st.markdown("**주간 유입 현황**")
         weekly_df = build_weekly_table(daily_month) if daily_month is not None else None
         if weekly_df is not None and not weekly_df.empty:
-            render_html_table(weekly_df)
-            render_dual_axis_chart(weekly_df, "기간")
+            render_html_table(weekly_df.drop(columns=["주차"]))
+            render_dual_axis_chart(weekly_df, "주차")
         else:
             st.info("데이터가 없습니다.")
 
@@ -423,32 +431,39 @@ else:
     def _shift_week(delta_weeks):
         st.session_state["cv_week_monday"] += datetime.timedelta(weeks=delta_weeks)
 
-    col_acc_prev, col_acc_select, col_acc_next, col_week_prev, col_week_label, col_week_next = st.columns(
-        [0.5, 2.5, 0.5, 0.5, 1.8, 0.5], vertical_alignment="center"
-    )
-    with col_acc_prev:
-        st.button("◀", key="cv_account_prev", on_click=_shift_account, args=(-1,), width="stretch")
-    with col_acc_select:
-        st.selectbox(
-            "광고 계정", options=available_accounts, key="cv_account_select", label_visibility="collapsed",
+    # 직접 몇 주 전인지 클릭해서 바로 고를 수 있도록 최근 16주(약 4개월) 목록을
+    # 드롭다운으로 제공한다 — 그 이전 주는 좌우 버튼으로 하나씩 넘겨서 접근.
+    # 오래된 주가 위, 최신 주가 아래(오름차순)로 정렬 — 기본 선택값이 최신 주라
+    # 목록 맨 아래에 위치하고, 마우스 휠을 위로 올릴수록 과거 데이터가 나오게 된다.
+    week_options = [last_completed_monday - datetime.timedelta(weeks=i) for i in range(15, -1, -1)]
+    if st.session_state["cv_week_monday"] not in week_options:
+        week_options.append(st.session_state["cv_week_monday"])
+        week_options.sort()
+
+    with st.container(key="cv_nav_row"):
+        col_acc_prev, col_acc_select, col_acc_next, col_week_prev, col_week_select, col_week_next = st.columns(
+            [0.5, 2.5, 0.5, 0.5, 1.8, 0.5]
         )
-    with col_acc_next:
-        st.button("▶", key="cv_account_next", on_click=_shift_account, args=(1,), width="stretch")
-    with col_week_prev:
-        st.button("◀", key="cv_week_prev", on_click=_shift_week, args=(-1,), width="stretch")
-    with col_week_label:
-        # 날짜 입력창(2026/07/20) 대신, 실무에서 쓰는 "N월 N주차" 표기만 가운데 보여준다
-        # — 주 이동은 좌우 버튼으로 충분해서 달력으로 임의 날짜를 찍을 일은 없다.
-        st.markdown(
-            f'<div style="text-align:center; font-weight:600; font-size:14px; padding-top:6px;">'
-            f'{month_week_label(st.session_state["cv_week_monday"])}</div>',
-            unsafe_allow_html=True,
-        )
-    with col_week_next:
-        st.button(
-            "▶", key="cv_week_next", on_click=_shift_week, args=(1,), width="stretch",
-            disabled=(st.session_state["cv_week_monday"] >= last_completed_monday),
-        )
+        with col_acc_prev:
+            st.button("◀", key="cv_account_prev", on_click=_shift_account, args=(-1,), width="stretch")
+        with col_acc_select:
+            st.selectbox(
+                "광고 계정", options=available_accounts, key="cv_account_select", label_visibility="collapsed",
+            )
+        with col_acc_next:
+            st.button("▶", key="cv_account_next", on_click=_shift_account, args=(1,), width="stretch")
+        with col_week_prev:
+            st.button("◀", key="cv_week_prev", on_click=_shift_week, args=(-1,), width="stretch")
+        with col_week_select:
+            st.selectbox(
+                "조회 주차", options=week_options, key="cv_week_monday",
+                format_func=month_week_label, label_visibility="collapsed",
+            )
+        with col_week_next:
+            st.button(
+                "▶", key="cv_week_next", on_click=_shift_week, args=(1,), width="stretch",
+                disabled=(st.session_state["cv_week_monday"] >= last_completed_monday),
+            )
 
     week_monday = st.session_state["cv_week_monday"]
     week_sunday = week_monday + datetime.timedelta(days=6)
@@ -461,17 +476,17 @@ else:
 
     with st.container(border=True, key="section_report_place"):
         extra_adgroups += render_ad_type_report(
-            cid, ak, sk, "플레이스광고", "📍 플레이스 광고", week_monday, week_sunday
+            cid, ak, sk, "플레이스광고", "플레이스 광고", week_monday, week_sunday
         ) or []
 
     with st.container(border=True, key="section_report_weblink"):
         extra_adgroups += render_ad_type_report(
-            cid, ak, sk, "파워링크광고", "🔗 파워링크 광고", week_monday, week_sunday
+            cid, ak, sk, "파워링크광고", "파워링크 광고", week_monday, week_sunday
         ) or []
 
     with st.container(border=True, key="section_report_contents"):
         extra_adgroups += render_ad_type_report(
-            cid, ak, sk, "파워컨텐츠광고", "📝 파워컨텐츠 광고", week_monday, week_sunday
+            cid, ak, sk, "파워컨텐츠광고", "파워컨텐츠 광고", week_monday, week_sunday
         ) or []
 
     # 매장 본업 3구간(플레이스/파워링크/파워컨텐츠)과 섞이면 헷갈리니, 보름숲의
