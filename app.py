@@ -400,6 +400,34 @@ st.markdown(f"""
         color: #FFFFFF !important;
         font-weight: 600 !important;
     }}
+    /* 광고 소재·시각화 페이지의 매장/주차 이동 버튼 — 기본 st.button 크기(꽤 큼)라
+       나머지 컴팩트한 UI와 어울리지 않아서, 위 pr_date_prev/next와 동일하게 작은
+       정사각형 버튼으로 맞춘다. */
+    div[class*="st-key-cv_account_prev"] button,
+    div[class*="st-key-cv_account_next"] button,
+    div[class*="st-key-cv_week_prev"] button,
+    div[class*="st-key-cv_week_next"] button {{
+        width: 25px !important;
+        height: 25px !important;
+        min-width: 25px !important;
+        min-height: 25px !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        background-color: {PRIMARY} !important;
+        border: none !important;
+        border-radius: 6px !important;
+        box-shadow: none !important;
+    }}
+    div[class*="st-key-cv_account_prev"] button p,
+    div[class*="st-key-cv_account_next"] button p,
+    div[class*="st-key-cv_week_prev"] button p,
+    div[class*="st-key-cv_week_next"] button p {{
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+    }}
     /* 수정/삭제는 감싸는 박스(배경+테두리) 없이 아이콘만 — 대신 아이콘을 outline이
        아니라 채워진(filled) 스타일로 바꿔서 박스 없이도 잘 보이게 한다. */
     div[class*="st-key-edit_"] button,
