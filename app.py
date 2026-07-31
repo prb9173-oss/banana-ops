@@ -461,6 +461,13 @@ st.markdown(f"""
     div[data-testid="stSelectboxVirtualDropdown"] div[role="listbox"] {{
         max-height: 180px !important;
     }}
+    /* 평균 입찰가 입력칸: -/+ 스테퍼 버튼을 없애고 숫자만 입력→엔터로 확정하는
+       단순한 필드로 — 값 입력/확정 동작 자체는 그대로(st.number_input 유지),
+       버튼만 시각적으로 숨긴다. */
+    div[class*="st-key-cv_avgbid_"] button[data-testid="stNumberInputStepUp"],
+    div[class*="st-key-cv_avgbid_"] button[data-testid="stNumberInputStepDown"] {{
+        display: none !important;
+    }}
     /* 입찰가 표 컬럼(cv_bid_row)은 비율 기반 st.columns([1,2])라 화면이 넓을수록
        표가 불필요하게 같이 넓어졌다 — 표는 고정 폭으로 작게 두고, 특이사항 칸이
        남는 폭을 전부 가져가게 한다. 두 컬럼 모두 명시적으로 재지정해야

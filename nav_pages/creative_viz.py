@@ -1,15 +1,15 @@
 import streamlit as st
 import datetime
-import time
-import hmac
-import hashlib
-import base64
-import requests
 import pandas as pd
 import altair as alt
+from supabase import create_client
 
-REQUEST_TIMEOUT = 10
-BASE_URL = "https://api.searchad.naver.com"
+
+@st.cache_resource
+def get_supabase_client():
+    sb = st.secrets["supabase"]
+    return create_client(sb["url"], sb["key"])
+
 
 def month_week_label(monday):
     """월요일 시작 한 주를 "N월 N주차"로 표기한다 — 실무 리포트 관례를 따라, 한 주가
@@ -32,110 +32,71 @@ def month_week_label(monday):
     return f"{target[1]}월 {week_num}주차"
 
 
-AD_TYPE_CAMPAIGN_TP = {
-    "플레이스광고": ["PLACE"],
-    "파워링크광고": ["WEB_SITE"],
-    "파워컨텐츠광고": ["CONTENTS", "POWER_CONTENT", "POWER_CONTENTS", "INFORMATION"],
-}
+@st.cache_data(ttl=600, show_spinner=False)
+def fetch_first_adgroup(account_key, ad_type):
+    """creative_adgroup_snapshot 캐시 테이블에서 이 계정·광고유형의 대표/부가
+    광고그룹을 가져온다 — 2026-07-31부터 라이브 API 호출 없이 매주 월요일 자동
+    수집 스크립트(scripts/check_ad_performance.py)가 채워둔 값만 읽는다(회의 중
+    페이지를 빠르게 넘겨볼 때 API 왕복 지연이 없도록).
 
+    "가장 최신 week_monday" 행을 대표/부가 판단 기준으로 삼는다 — 현재 입찰가는
+    조회 중인 주차와 무관하게 항상 최신값을 보여준다(라이브 API였을 때도 조회
+    주차와 무관하게 "현재" 입찰가만 보여줬으므로 동일한 동작). extra_adgroups는
+    role='extra'인 행 전부 — 자동 수집 스크립트가 이미 ELIGIBLE만 걸러서 저장하므로
+    (2026-07-31에 발견한 PAUSED 유령 광고그룹 버그 수정 로직 그대로) 여기서 다시
+    걸러낼 필요는 없다."""
+    client = get_supabase_client()
+    res = (
+        client.table("creative_adgroup_snapshot")
+        .select("*")
+        .eq("account_key", account_key)
+        .eq("ad_type", ad_type)
+        .order("week_monday", desc=True)
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
+        return None, [], None
+    latest_week = rows[0]["week_monday"]
+    latest_rows = [r for r in rows if r["week_monday"] == latest_week]
+    mains = [r for r in latest_rows if r["role"] == "main"]
+    extras = [r for r in latest_rows if r["role"] == "extra"]
+    if not mains:
+        return None, [], None
 
-def make_signature(timestamp, method, uri, secret_key):
-    message = f"{timestamp}.{method}.{uri}"
-    hash_obj = hmac.new(secret_key.encode("utf-8"), message.encode("utf-8"), hashlib.sha256)
-    return base64.b64encode(hash_obj.digest()).decode("utf-8")
-
-
-def get_header(method, uri, api_key, secret_key, customer_id):
-    timestamp = str(int(time.time() * 1000))
-    signature = make_signature(timestamp, method, uri, secret_key)
-    return {
-        'Content-Type': 'application/json; charset=UTF-8',
-        'X-Timestamp': timestamp,
-        'X-API-KEY': api_key,
-        'X-Customer': str(customer_id),
-        'X-Signature': signature,
-    }
-
-
-def _get(uri, api_key, secret_key, customer_id, params=None):
-    headers = get_header("GET", uri, api_key, secret_key, customer_id)
-    try:
-        r = requests.get(f"{BASE_URL}{uri}", headers=headers, params=params, timeout=REQUEST_TIMEOUT)
-    except requests.exceptions.RequestException as e:
-        return None, str(e)
-    if r.status_code != 200:
-        return None, f"HTTP {r.status_code}: {r.text}"
-    return r.json(), None
+    def _to_adgroup(r):
+        return {
+            "nccAdgroupId": r["adgroup_id"],
+            "name": r.get("adgroup_name"),
+            "bidAmt": r.get("bid_amt", 0),
+            "dailyBudget": r.get("daily_budget", 0),
+        }
+    return _to_adgroup(mains[0]), [_to_adgroup(e) for e in extras], None
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def fetch_first_adgroup(customer_id, api_key, secret_key, ad_type):
-    """이 광고 유형(campaignTp)의 캠페인·광고그룹을 대표로 하나 가져온다.
-    매장마다 특정 유형 자체가 없을 수 있어(예: 파워컨텐츠 없는 매장), 그 경우 에러가
-    아니라 (None, [], None)으로 "그냥 없음"을 구분해서 돌려준다.
-
-    그냥 목록의 첫 번째를 고르면 안 된다 — 일부 매장(예: 보름숲)은 지난 시즌
-    프로모션용으로 만들었다가 중지(PAUSED)한 캠페인이 여러 개 남아있고, API가 최신순
-    정렬을 보장하지 않아 그 옛날 캠페인이 0번으로 올 수 있다. 실제로 이 문제로 보름숲의
-    플레이스 광고가 전부 0으로 나온 적이 있어서, 지금 운영 중(ELIGIBLE)인 캠페인·
-    광고그룹을 우선하고 없을 때만 첫 번째로 폴백한다.
-
-    같은 캠페인 안에 대표 광고그룹 말고 다른 운영 중(ELIGIBLE) 광고그룹이 더 있으면
-    (예: 보름숲의 "보름숲 통대관", "대관 파워컨텐츠" — 매장 본업과 다른 대관 상품용
-    광고그룹) 대표로 삼지 않고 extra_adgroups로 따로 돌려준다 — 호출부에서 플레이스/
-    파워링크/파워컨텐츠 3개 구간과 안 섞이게 맨 아래에 별도 이름으로 보여주기 위함.
-
-    extra_adgroups는 항상 ELIGIBLE(운영 중)인 것만 포함한다 — 대표 광고그룹이 하나도
-    ELIGIBLE이 없어 전체 목록(상태 무관)으로 폴백하는 경우, 그 폴백 목록의 나머지를
-    그대로 "추가 광고그룹"으로 보여주면 실제로는 꺼져 있는(PAUSED) 광고그룹까지 회의
-    자료에 노출되는 버그가 있었다(2026-07-31, 고집돌우럭 중문점의 실제 status:PAUSED,
-    userLock:true인 유령 광고그룹이 재현) — 대표는 폴백해도 되지만, 추가 목록은 항상
-    ELIGIBLE 필터를 거친다."""
-    campaigns, err = _get("/ncc/campaigns", api_key, secret_key, customer_id)
-    if err:
-        return None, [], err
-    target_types = AD_TYPE_CAMPAIGN_TP[ad_type]
-    matched = [c for c in campaigns if c.get("campaignTp") in target_types]
-    if not matched:
-        return None, [], None
-    active_campaigns = [c for c in matched if c.get("status") == "ELIGIBLE"]
-    chosen_campaign = (active_campaigns or matched)[0]
-    adgroups, err = _get("/ncc/adgroups", api_key, secret_key, customer_id, {"nccCampaignId": chosen_campaign["nccCampaignId"]})
-    if err:
-        return None, [], err
-    if not adgroups:
-        return None, [], None
-    active_adgroups = [a for a in adgroups if a.get("status") == "ELIGIBLE"]
-    if active_adgroups:
-        return active_adgroups[0], active_adgroups[1:], None
-    return adgroups[0], [], None
-
-
-@st.cache_data(ttl=600, show_spinner=False)
-def fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, start_date, end_date):
-    """일자별 노출수/클릭수/총비용 — data_extractor.py의 동일 엔드포인트/파라미터를 재사용."""
-    params = {
-        'id': adgroup_id,
-        'fields': '["impCnt","clkCnt","salesAmt"]',
-        'timeRange': f'{{"since":"{start_date.strftime("%Y-%m-%d")}","until":"{end_date.strftime("%Y-%m-%d")}"}}',
-        'timeIncrement': '1',
-    }
-    data, err = _get("/stats", api_key, secret_key, customer_id, params)
-    if err:
-        return None, err
-
-    rows = []
-    if data and 'data' in data:
-        expected_days = (end_date - start_date).days + 1
-        for i, stat in enumerate(data['data']):
-            if i >= expected_days:
-                break
-            rows.append({
-                "날짜": start_date + datetime.timedelta(days=i),
-                "노출수": int(stat.get('impCnt', 0)),
-                "클릭수": int(stat.get('clkCnt', 0)),
-                "총비용": int(stat.get('salesAmt', 0)),
-            })
+def fetch_daily_stats(adgroup_id, start_date, end_date):
+    """일자별 노출수/클릭수/총비용 — creative_daily_stats 캐시 테이블 조회
+    (2026-07-31부터 라이브 API 호출 없음)."""
+    client = get_supabase_client()
+    res = (
+        client.table("creative_daily_stats")
+        .select("*")
+        .eq("adgroup_id", adgroup_id)
+        .gte("stat_date", start_date.isoformat())
+        .lte("stat_date", end_date.isoformat())
+        .order("stat_date")
+        .execute()
+    )
+    rows = [
+        {
+            "날짜": datetime.date.fromisoformat(r["stat_date"]),
+            "노출수": r.get("impressions", 0),
+            "클릭수": r.get("clicks", 0),
+            "총비용": r.get("cost", 0),
+        }
+        for r in (res.data or [])
+    ]
     return pd.DataFrame(rows), None
 
 
@@ -240,80 +201,90 @@ def build_weekly_table(daily_df):
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def fetch_top_keywords(customer_id, api_key, secret_key, adgroup_id, ad_type, start_date, end_date):
-    """상위 클릭 10개 키워드. 플레이스광고는 조회 기간을 지원하지 않는 별도
-    statType(NPLA_SCH_KEYWORD)를 쓰고, 나머지는 키워드 목록 + /stats 조합으로 뽑는다
-    (둘 다 data_extractor.py와 동일한 방식)."""
-    if ad_type == "플레이스광고":
-        params = {'id': adgroup_id, 'statType': 'NPLA_SCH_KEYWORD'}
-        data, err = _get("/stats", api_key, secret_key, customer_id, params)
-        if err:
-            return None, err
-        rows = []
-        items = data if isinstance(data, list) else (data or {}).get('data', [])
-        for item in items:
-            kw = item.get('schKeyword') or item.get('keyword') or item.get('searchKeyword')
-            if kw:
-                rows.append({
-                    "키워드": kw,
-                    "노출수": int(item.get('impCnt', 0)),
-                    "클릭수": int(item.get('clkCnt', 0)),
-                })
-        if not rows:
-            return None, None
-        df = pd.DataFrame(rows).sort_values("클릭수", ascending=False).head(10).reset_index(drop=True)
-        return with_ctr_cpc(df.assign(총비용=0))[["키워드", "노출수", "클릭수", "클릭률(%)"]], None
-
-    keywords, err = _get("/ncc/keywords", api_key, secret_key, customer_id, {"nccAdgroupId": adgroup_id})
-    if err:
-        return None, err
-    if not keywords:
-        return None, None
-    kw_ids = [k.get('nccKeywordId') for k in keywords]
-    kw_map = {k.get('nccKeywordId'): k.get('keyword') for k in keywords}
-
-    rows = []
-    chunk_size = 50
-    for i in range(0, len(kw_ids), chunk_size):
-        chunk_ids = kw_ids[i:i + chunk_size]
-        params = {
-            'ids': chunk_ids,
-            'fields': '["impCnt","clkCnt"]',
-            'timeRange': f'{{"since":"{start_date.strftime("%Y-%m-%d")}","until":"{end_date.strftime("%Y-%m-%d")}"}}',
-        }
-        data, err = _get("/stats", api_key, secret_key, customer_id, params)
-        if err:
-            continue
-        for stat in (data or {}).get('data', []):
-            kw_id = stat.get('id')
-            rows.append({
-                "키워드": kw_map.get(kw_id, "알 수 없는 키워드"),
-                "노출수": int(stat.get('impCnt', 0)),
-                "클릭수": int(stat.get('clkCnt', 0)),
-            })
+def fetch_top_keywords(adgroup_id, week_monday):
+    """그 주(선택한 주차)의 상위 클릭 10개 키워드 — creative_top_keywords 캐시
+    조회(2026-07-31부터). 예전 라이브 API 버전은 실수로 "최근 4주 합산" 클릭수로
+    뽑고 있었는데, 실제 리포트 양식은 그 주만의 순위라 이번 전환에서 바로잡았다.
+    파워링크/파워컨텐츠는 매주 자동 수집, 플레이스광고는 API가 기간 조회를 지원
+    안 해서 관리자가 화면에서 직접 입력한 값만 있다(입력 전이면 빈 결과)."""
+    client = get_supabase_client()
+    res = (
+        client.table("creative_top_keywords")
+        .select("*")
+        .eq("adgroup_id", adgroup_id)
+        .eq("week_monday", week_monday.isoformat())
+        .order("display_order")
+        .execute()
+    )
+    rows = [
+        {"키워드": r["keyword"], "노출수": r.get("impressions", 0), "클릭수": r.get("clicks", 0)}
+        for r in (res.data or [])
+        if r.get("keyword")  # 플레이스는 관리자가 아직 입력 전이면 빈 문자열일 수 있음
+    ]
     if not rows:
         return None, None
-    df = pd.DataFrame(rows).sort_values("클릭수", ascending=False).head(10).reset_index(drop=True)
+    df = pd.DataFrame(rows)
     return with_ctr_cpc(df.assign(총비용=0))[["키워드", "노출수", "클릭수", "클릭률(%)"]], None
 
 
-def render_bid_info(ad_type, adgroup):
+@st.cache_data(ttl=30, show_spinner=False)
+def fetch_admin_note(adgroup_id, week_monday):
+    """관리자가 입력하는 평균입찰가/특이사항 — creative_admin_notes에서 그 주(week_monday)
+    값을 읽는다. 예전엔 st.session_state에만 있어서 새로고침(관리자 모드 켜고 끄기는
+    내부적으로 페이지 전체를 새로고침한다)하면 그대로 날아갔는데, 이제 DB에 저장해
+    다른 지점을 봤다 돌아와도, 관리자 모드를 껐다 켜도 값이 유지된다."""
+    client = get_supabase_client()
+    res = (
+        client.table("creative_admin_notes")
+        .select("*")
+        .eq("adgroup_id", adgroup_id)
+        .eq("week_monday", week_monday.isoformat())
+        .limit(1)
+        .execute()
+    )
+    rows = res.data or []
+    if rows:
+        return rows[0].get("avg_bid_amt", 0), rows[0].get("note", "")
+    return 0, ""
+
+
+def upsert_admin_note(adgroup_id, week_monday, avg_bid_amt, note):
+    client = get_supabase_client()
+    client.table("creative_admin_notes").upsert({
+        "adgroup_id": adgroup_id,
+        "week_monday": week_monday.isoformat(),
+        "avg_bid_amt": int(avg_bid_amt),
+        "note": note,
+    }, on_conflict="adgroup_id,week_monday").execute()
+    fetch_admin_note.clear()  # 다음 조회부터 바로 새 값 반영되도록 캐시 비움
+
+
+def render_bid_info(ad_type, adgroup, week_monday):
     """원본 엑셀 리포트의 좌측 입찰가 박스 + 우측 특이사항 박스를 재현한다.
-    현재입찰가·하루예산은 /ncc/adgroups 응답의 실제 값(bidAmt/dailyBudget)이고,
+    현재입찰가·하루예산은 매주 자동 수집된 실제 값(creative_adgroup_snapshot)이고,
     플레이스광고의 "평균 입찰가"(동종업계 시세)는 API로 못 가져오는 값이라 매주 직접
-    확인해서 입력하는 수동 입력칸으로 둔다 — 아직 DB 저장은 없어 새로고침하면
-    초기화된다(저장 방식은 나중에 별도로 정한다).
-    위젯 key는 store_name+ad_type이 아니라 adgroup_id로 고유하게 잡는다 — 보름숲의
-    "보름숲 통대관"처럼 같은 store_name·ad_type인 추가 광고그룹이 하나 더 있으면
-    store_name+ad_type만으로는 대표 광고그룹의 입력칸과 key가 겹쳐 버린다.
+    확인해서 입력하는 수동 입력칸으로 둔다 — creative_admin_notes에 (광고그룹, 주차)
+    단위로 저장되어 새로고침/관리자 모드 전환/지점 이동에도 값이 유지된다.
+    위젯 key는 store_name+ad_type이 아니라 adgroup_id+week_monday로 고유하게 잡는다 —
+    보름숲의 "보름숲 통대관"처럼 같은 store_name·ad_type인 추가 광고그룹이 하나 더
+    있으면 store_name+ad_type만으로는 대표 광고그룹의 입력칸과 key가 겹쳐 버리고,
+    주차가 바뀌면 그 주만의 값을 새로 보여줘야 하기 때문이다.
     이 페이지의 목표는 광고 데이터를 한 화면에 컴팩트하게 보여주는 것이라, 평균
     입찰가·특이사항을 "적는" 입력창 자체는 관리자 모드에서만 그린다 — 일반 사용자는
     입력 위젯 없이 표/텍스트로 결과값만 보므로 이 칸 때문에 세로로 늘어나지 않는다."""
     is_admin = st.session_state.get("is_admin")
     adgroup_id = adgroup["nccAdgroupId"]
     bid_amt = adgroup.get("bidAmt", 0)
-    avg_key = f"cv_avgbid_{adgroup_id}"
-    note_key = f"cv_note_{adgroup_id}"
+    avg_key = f"cv_avgbid_{adgroup_id}_{week_monday.isoformat()}"
+    note_key = f"cv_note_{adgroup_id}_{week_monday.isoformat()}"
+
+    if avg_key not in st.session_state or note_key not in st.session_state:
+        db_avg, db_note = fetch_admin_note(adgroup_id, week_monday)
+        st.session_state.setdefault(avg_key, db_avg)
+        st.session_state.setdefault(note_key, db_note)
+
+    def _save_admin_note():
+        upsert_admin_note(adgroup_id, week_monday, st.session_state[avg_key], st.session_state[note_key])
 
     def _build_table(rows):
         html = f'<table style="border-collapse:collapse; border:1px solid {TABLE_BORDER};">'
@@ -356,7 +327,7 @@ def render_bid_info(ad_type, adgroup):
                 st.markdown(_build_table(rows), unsafe_allow_html=True)
                 if is_admin:
                     st.number_input(
-                        "평균 입찰가", min_value=0, step=10, key=avg_key,
+                        "평균 입찰가", min_value=0, step=10, key=avg_key, on_change=_save_admin_note,
                     )
             else:
                 daily_budget = adgroup.get("dailyBudget", 0)
@@ -366,7 +337,7 @@ def render_bid_info(ad_type, adgroup):
             if is_admin:
                 st.text_input(
                     "특이사항", key=note_key, placeholder="* 특이사항 - 이번 주 특이사항을 입력하세요",
-                    label_visibility="collapsed",
+                    label_visibility="collapsed", on_change=_save_admin_note,
                 )
             else:
                 note_text = st.session_state.get(note_key, "").strip()
@@ -377,23 +348,23 @@ def render_bid_info(ad_type, adgroup):
                 )
 
 
-def render_report_body(customer_id, api_key, secret_key, ad_type, adgroup, last_week_start, last_week_end):
+def render_report_body(ad_type, adgroup, last_week_start, last_week_end):
     """입찰가 박스 + 일별/주간/Top10 표·차트 3분할 — 대표 광고그룹이든, 보름숲의
     "보름숲 통대관"처럼 별도로 보여주는 추가 광고그룹이든 똑같이 이 본문을 쓴다."""
-    render_bid_info(ad_type, adgroup)
+    render_bid_info(ad_type, adgroup, last_week_start)
 
     adgroup_id = adgroup["nccAdgroupId"]
     four_weeks_start = last_week_start - datetime.timedelta(weeks=3)  # 선택한 주 포함 4주 전 월요일
 
-    daily_recent, err = fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, last_week_start, last_week_end)
+    daily_recent, err = fetch_daily_stats(adgroup_id, last_week_start, last_week_end)
     if err:
         st.error(f"❌ 일별 유입 현황을 가져오는 중 오류가 발생했습니다: {err}")
         return
-    daily_month, err = fetch_daily_stats(customer_id, api_key, secret_key, adgroup_id, four_weeks_start, last_week_end)
+    daily_month, err = fetch_daily_stats(adgroup_id, four_weeks_start, last_week_end)
     if err:
         st.error(f"❌ 주간 유입 현황을 가져오는 중 오류가 발생했습니다: {err}")
         return
-    top_keywords, err = fetch_top_keywords(customer_id, api_key, secret_key, adgroup_id, ad_type, four_weeks_start, last_week_end)
+    top_keywords, err = fetch_top_keywords(adgroup_id, last_week_start)
     if err:
         st.error(f"❌ 상위 클릭 키워드를 가져오는 중 오류가 발생했습니다: {err}")
         return
@@ -430,20 +401,20 @@ def render_report_body(customer_id, api_key, secret_key, ad_type, adgroup, last_
             st.info("데이터가 없습니다.")
 
 
-def render_ad_type_report(customer_id, api_key, secret_key, ad_type, label, last_week_start, last_week_end):
+def render_ad_type_report(account_key, ad_type, label, last_week_start, last_week_end):
     """플레이스/파워링크/파워컨텐츠 3개 구간 중 하나를 그린다. 대표 광고그룹 외에
     같은 계정에 더 있는 추가(대관 등) 광고그룹은 여기서 안 그리고 그대로 돌려줘서,
     호출부가 페이지 맨 아래에 별도 이름으로 몰아서 보여줄 수 있게 한다."""
     st.markdown(f"### {label}")
-    adgroup, extra_adgroups, err = fetch_first_adgroup(customer_id, api_key, secret_key, ad_type)
+    adgroup, extra_adgroups, err = fetch_first_adgroup(account_key, ad_type)
     if err:
         st.error(f"❌ {label} 데이터를 가져오는 중 오류가 발생했습니다: {err}")
         return []
     if not adgroup:
-        st.info(f"이 계정에는 {label}가 없습니다.")
+        st.info(f"이 계정에는 {label}가 없습니다. (아직 자동 수집이 안 됐을 수도 있어요 — 매주 월요일 수집됩니다.)")
         return []
 
-    render_report_body(customer_id, api_key, secret_key, ad_type, adgroup, last_week_start, last_week_end)
+    render_report_body(ad_type, adgroup, last_week_start, last_week_end)
     return [(ad_type, ag) for ag in extra_adgroups]
 
 
@@ -518,24 +489,22 @@ else:
     week_sunday = week_monday + datetime.timedelta(days=6)
 
     selected_account = st.session_state["cv_account_select"]
-    section = st.secrets[selected_account]
-    cid, ak, sk = section["customer_id"], section["api_key"], section["secret_key"]
 
     extra_adgroups = []
 
     with st.container(border=True, key="section_report_place"):
         extra_adgroups += render_ad_type_report(
-            cid, ak, sk, "플레이스광고", "플레이스 광고", week_monday, week_sunday
+            selected_account, "플레이스광고", "플레이스 광고", week_monday, week_sunday
         ) or []
 
     with st.container(border=True, key="section_report_weblink"):
         extra_adgroups += render_ad_type_report(
-            cid, ak, sk, "파워링크광고", "파워링크 광고", week_monday, week_sunday
+            selected_account, "파워링크광고", "파워링크 광고", week_monday, week_sunday
         ) or []
 
     with st.container(border=True, key="section_report_contents"):
         extra_adgroups += render_ad_type_report(
-            cid, ak, sk, "파워컨텐츠광고", "파워컨텐츠 광고", week_monday, week_sunday
+            selected_account, "파워컨텐츠광고", "파워컨텐츠 광고", week_monday, week_sunday
         ) or []
 
     # 매장 본업 3구간(플레이스/파워링크/파워컨텐츠)과 섞이면 헷갈리니, 보름숲의
@@ -544,4 +513,4 @@ else:
     for ad_type, ag in extra_adgroups:
         with st.container(border=True, key=f"section_report_extra_{ag['nccAdgroupId']}"):
             st.markdown(f"### 🏛 {ag.get('name') or '추가 광고그룹'}")
-            render_report_body(cid, ak, sk, ad_type, ag, week_monday, week_sunday)
+            render_report_body(ad_type, ag, week_monday, week_sunday)
