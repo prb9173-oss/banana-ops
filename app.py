@@ -154,27 +154,6 @@ st.markdown(f"""
         width: auto !important;
     }}
 
-    /* 재확인 패널: 경고색 대신 흰 배경 + 좌측 강조선으로 모던하게 구분 */
-    div[class*="st-key-confirm_panel"] {{
-        background-color: #FFFFFF !important;
-        border: 1px solid {BORDER} !important;
-        border-left: 4px solid {PRIMARY} !important;
-        border-radius: 10px !important;
-        padding: 18px 20px !important;
-        box-shadow: 0 1px 2px rgba(16,24,40,0.04);
-    }}
-    .confirm-text {{
-        font-size: 15px;
-        color: #16181D;
-        line-height: 1.6;
-        margin-bottom: 14px;
-    }}
-    .confirm-subtext {{
-        font-size: 13px;
-        color: {MUTED_TEXT};
-        font-weight: 400;
-        margin-top: 2px;
-    }}
     div[class*="st-key-confirm_yes"] button {{
         background-color: {PRIMARY} !important;
         border: none !important;
@@ -190,6 +169,16 @@ st.markdown(f"""
     div[class*="st-key-confirm_no"] button p {{
         color: #475569 !important;
         font-weight: 600 !important;
+    }}
+    /* 묶음 삭제 확인창의 "삭제" 버튼: 되돌릴 수 없는 파괴적 동작이므로
+       On/Off 확인창의 파란 "예"와 구분되게 빨간색으로 표시 */
+    div[class*="st-key-confirm_delete_yes_"] button {{
+        background-color: #DC2626 !important;
+        border: none !important;
+    }}
+    div[class*="st-key-confirm_delete_yes_"] button p {{
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
     }}
 
     /* 시즌 키워드 페이지의 기능별 구역(매장 관리/묶음 추가/묶음 목록)을
