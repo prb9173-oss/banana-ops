@@ -35,6 +35,13 @@ st.markdown(f"""
         padding-top: 20px !important;
     }}
 
+    /* st.dialog 팝업은 기본적으로 세로로는 화면 위쪽에 붙어서 뜬다
+       (align-items: flex-start) — 사용자 입장에서 화면 정중앙에 뜨도록
+       세로 중앙 정렬로 바꾼다. 앱 안의 모든 dialog(관리자 로그인 포함)에 적용됨 */
+    div[data-testid="stDialog"] {{
+        align-items: center !important;
+    }}
+
     div.stButton > button {{
         background-color: {PRIMARY};
         border: none;
@@ -154,9 +161,16 @@ st.markdown(f"""
         width: auto !important;
     }}
 
+    /* 팝업(st.dialog) 안 버튼들은 배경색을 !important로 고정 지정하다 보니
+       전역 hover 규칙(div.stButton > button:hover)이 덮어쓰지 못해 hover해도
+       색이 그대로였다 — 페이지의 다른 버튼들처럼 hover 시 더 진해지도록
+       각 버튼마다 :hover 규칙을 따로 지정한다 */
     div[class*="st-key-confirm_yes"] button {{
         background-color: {PRIMARY} !important;
         border: none !important;
+    }}
+    div[class*="st-key-confirm_yes"] button:hover {{
+        background-color: {PRIMARY_HOVER} !important;
     }}
     div[class*="st-key-confirm_yes"] button p {{
         color: #FFFFFF !important;
@@ -165,6 +179,9 @@ st.markdown(f"""
     div[class*="st-key-confirm_no"] button {{
         background-color: #FFFFFF !important;
         border: 1px solid #CBD5E1 !important;
+    }}
+    div[class*="st-key-confirm_no"] button:hover {{
+        background-color: #F1F5F9 !important;
     }}
     div[class*="st-key-confirm_no"] button p {{
         color: #475569 !important;
@@ -176,7 +193,21 @@ st.markdown(f"""
         background-color: #DC2626 !important;
         border: none !important;
     }}
+    div[class*="st-key-confirm_delete_yes_"] button:hover {{
+        background-color: #B91C1C !important;
+    }}
     div[class*="st-key-confirm_delete_yes_"] button p {{
+        color: #FFFFFF !important;
+        font-weight: 700 !important;
+    }}
+    div[class*="st-key-result_ok"] button {{
+        background-color: {PRIMARY} !important;
+        border: none !important;
+    }}
+    div[class*="st-key-result_ok"] button:hover {{
+        background-color: {PRIMARY_HOVER} !important;
+    }}
+    div[class*="st-key-result_ok"] button p {{
         color: #FFFFFF !important;
         font-weight: 700 !important;
     }}
@@ -539,6 +570,9 @@ st.markdown(f"""
         background-color: #FFFFFF !important;
         border: 1px solid #CBD5E1 !important;
     }}
+    div[class*="st-key-cancel_"] button:hover {{
+        background-color: #F1F5F9 !important;
+    }}
     div[class*="st-key-cancel_"] button p {{
         color: #475569 !important;
         font-weight: 600 !important;
@@ -546,6 +580,9 @@ st.markdown(f"""
     div[class*="st-key-save_"] button {{
         background-color: {PRIMARY} !important;
         border: none !important;
+    }}
+    div[class*="st-key-save_"] button:hover {{
+        background-color: {PRIMARY_HOVER} !important;
     }}
     div[class*="st-key-save_"] button p {{
         color: #FFFFFF !important;

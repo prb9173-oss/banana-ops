@@ -192,6 +192,13 @@ def _render_store_mgmt(stores, bundles):
 
     confirm_key = f"confirm_action_{selected_store_row['id']}_{selected_bundle_id}"
 
+    @st.dialog("완료")
+    def _result_dialog(message):
+        st.markdown(message)
+        if st.button("확인", key="result_ok", width="stretch"):
+            st.session_state["sk_result_message"] = None
+            st.rerun()
+
     @st.dialog("작업 확인")
     def _confirm_toggle_dialog(pending):
         action_label = "켜기" if pending == "on" else "끄기"
@@ -220,7 +227,7 @@ def _render_store_mgmt(stores, bundles):
                                 naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
                                 to_unlock, lock=False,
                             )
-                        st.success(f"✅ {len(to_create)}개 신규 추가, {len(to_unlock)}개 ON 처리했습니다.")
+                        result_message = f"✅ {len(to_create)}개 신규 추가, {len(to_unlock)}개 ON 처리했습니다."
                     else:
                         to_lock = [
                             live_by_text[kw] for kw in selected_bundle["keywords"]
@@ -231,16 +238,21 @@ def _render_store_mgmt(stores, bundles):
                                 naver_acct["customer_id"], naver_acct["api_key"], naver_acct["secret_key"],
                                 to_lock, lock=True,
                             )
-                        st.success(f"✅ {len(to_lock)}개 OFF 처리했습니다.")
+                        result_message = f"✅ {len(to_lock)}개 OFF 처리했습니다."
                     fetch_adgroup_keywords_live.clear()
                     st.session_state[confirm_key] = None
-                    st.rerun(scope="fragment")
+                    st.session_state["sk_result_message"] = result_message
+                    # 프래그먼트 스코프로 재실행하면 다이얼로그가 안 닫히고 뒤쪽
+                    # 상태 목록도 갱신되지 않는 문제가 있었다 (다이얼로그가 앱
+                    # 전체를 다시 그려야 스스로 닫히는 것으로 보임) — 실제 데이터를
+                    # 바꾸는 이 지점만은 전체 재실행으로 확실하게 반영한다.
+                    st.rerun()
                 except Exception as e:
                     st.error(f"❌ 적용 중 오류가 발생했습니다: {e}")
         with col_no:
             if st.button("아니오", key="confirm_no", width="stretch"):
                 st.session_state[confirm_key] = None
-                st.rerun(scope="fragment")
+                st.rerun()
 
     with st.container(key="onoff_actions"):
         if st.button("키워드 On", key="btn_turn_on"):
@@ -251,6 +263,10 @@ def _render_store_mgmt(stores, bundles):
     pending = st.session_state.get(confirm_key)
     if pending:
         _confirm_toggle_dialog(pending)
+
+    result_message = st.session_state.get("sk_result_message")
+    if result_message:
+        _result_dialog(result_message)
 
 
 with st.container(border=True, key="section_store_mgmt"):
