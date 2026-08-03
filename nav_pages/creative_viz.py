@@ -499,7 +499,7 @@ def fetch_stores():
     return [r["store_name"] for r in (res.data or [])]
 
 
-st.subheader("광고 소재 및 데이터 시각화")
+st.subheader("주간 광고 데이터")
 
 # 맨 아래 매장 이동 버튼을 누르면 다음 매장의 자료를 처음부터 봐야 하니, 브라우저
 # 스크롤을 페이지 맨 위로 되돌린다 — 그대로 두면 새 매장 데이터가 로드돼도 스크롤

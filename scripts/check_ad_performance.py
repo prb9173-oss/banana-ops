@@ -13,6 +13,13 @@ from supabase import create_client
 REQUEST_TIMEOUT = 10
 BASE_URL = "https://api.searchad.naver.com"
 
+# GitHub Actions 러너는 UTC로 돈다. 이 크론은 매주 월요일 08:00 KST(=일요일 23:00
+# UTC)에 실행되는데, datetime.date.today()를 그대로 쓰면 그 시각엔 UTC 기준 날짜가
+# 아직 "일요일"이라 "지난주"를 하루(사실상 일주일) 앞당겨 계산해버린다 — 2026-08-03
+# 첫 실행에서 실제로 이 버그로 그 주(7월 5주차) 데이터가 통째로 누락됐다. 한국시간
+# 기준 날짜로 고정해서 러너의 타임존과 무관하게 항상 올바른 주를 계산하게 한다.
+KST = datetime.timezone(datetime.timedelta(hours=9))
+
 AD_TYPE_CAMPAIGN_TP = {
     "플레이스광고": ["PLACE"],
     "파워링크광고": ["WEB_SITE"],
@@ -258,7 +265,7 @@ def main():
     stores = fetch_stores(client)
     logging.info("대상 매장 %d개 (계정 %d개에 분산)", len(stores), len(accounts))
 
-    today = datetime.date.today()
+    today = datetime.datetime.now(KST).date()
     this_monday = today - datetime.timedelta(days=today.weekday())
     week_monday = this_monday - datetime.timedelta(days=7)  # 지난 한 주(월~일)
     week_sunday = week_monday + datetime.timedelta(days=6)

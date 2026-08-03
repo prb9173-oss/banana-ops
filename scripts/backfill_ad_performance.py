@@ -16,6 +16,7 @@ import time
 
 from check_ad_performance import (
     AD_TYPE_CAMPAIGN_TP,
+    KST,
     fetch_daily_stats,
     fetch_first_adgroup,
     fetch_stores,
@@ -45,7 +46,7 @@ def main():
     stores = fetch_stores(client)
     logging.info("대상 매장 %d개, 과거 %d주 백필", len(stores), BACKFILL_WEEKS)
 
-    today = datetime.date.today()
+    today = datetime.datetime.now(KST).date()
     this_monday = today - datetime.timedelta(days=today.weekday())
     last_completed_monday = this_monday - datetime.timedelta(days=7)
     backfill_start = last_completed_monday - datetime.timedelta(weeks=BACKFILL_WEEKS - 1)
