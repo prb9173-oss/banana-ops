@@ -378,6 +378,14 @@ def render_bid_info(ad_type, adgroup, week_monday):
                 )
 
 
+@st.dialog("완료")
+def _kwsave_result_dialog():
+    st.markdown("저장했습니다.")
+    if st.button("확인", key="result_ok", width="stretch"):
+        st.session_state["cv_kwsave_result"] = False
+        st.rerun()
+
+
 def render_place_keyword_editor(adgroup_id, week_monday, existing_df):
     """플레이스광고 상위 클릭 10개 키워드 — 관리자가 st.data_editor(엑셀처럼 셀
     단위로 편집 가능한 표)로 직접 입력한다. API가 이 항목만 기간 조회를 지원하지
@@ -407,8 +415,11 @@ def render_place_keyword_editor(adgroup_id, week_monday, existing_df):
         clean_rows = [r for r in edited.to_dict("records") if r.get("키워드") and str(r["키워드"]).strip()]
         clean_rows.sort(key=lambda r: r["클릭수"] or 0, reverse=True)
         save_top_keywords(adgroup_id, week_monday, clean_rows)
-        st.success("저장했습니다.")
+        st.session_state["cv_kwsave_result"] = True
         st.rerun()
+
+    if st.session_state.get("cv_kwsave_result"):
+        _kwsave_result_dialog()
 
 
 def render_report_body(ad_type, adgroup, last_week_start, last_week_end):
