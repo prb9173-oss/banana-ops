@@ -1,6 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import datetime
+from urllib.parse import quote
 import pandas as pd
 import altair as alt
 from supabase import create_client
@@ -378,12 +379,114 @@ def render_bid_info(ad_type, adgroup, week_monday):
                 )
 
 
+# cv_kwsave_result 플래그는 Top10 키워드 저장·소재 캡처 업로드(플레이스/파워링크/
+# 파워컨텐츠 각 섹션, 추가 광고그룹까지) 여러 지점에서 공유해서 쓴다. 예전엔 각
+# 저장 지점 바로 아래에서 "플래그가 True면 다이얼로그 열기"를 각자 체크했는데,
+# 한 지점에서만 저장해도 플래그가 True가 되는 순간 나머지 모든 지점이 똑같이
+# _kwsave_result_dialog()를 부르려고 해서 StreamlitDuplicateElementId 에러가 났다
+# (2026-08-04 발견). 이제 페이지 스크립트 맨 끝, 모든 섹션을 다 그린 뒤 딱 한
+# 곳에서만 체크한다 — 같은 다이얼로그를 여러 번 열려고 시도하는 일이 구조적으로
+# 불가능해진다.
 @st.dialog("완료")
 def _kwsave_result_dialog():
     st.markdown("저장했습니다.")
     if st.button("확인", key="result_ok", width="stretch"):
         st.session_state["cv_kwsave_result"] = False
         st.rerun()
+
+
+CREATIVE_SCREENSHOT_BUCKET = "creative-screenshots"
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def fetch_creative_screenshot(adgroup_id):
+    """소재 실제 화면 캡처 — creative_screenshots 테이블에서 이 광고그룹의 최신
+    1행(있으면)을 가져온다. 주차 구분 없이 광고그룹당 최대 1행만 존재하고, 소재가
+    바뀔 때만 관리자가 수동으로 새로 올린다(주간 자동 수집 대상이 아님)."""
+    client = get_supabase_client()
+    res = client.table("creative_screenshots").select("*").eq("adgroup_id", adgroup_id).execute()
+    return res.data[0] if res.data else None
+
+
+def upload_creative_screenshot(adgroup_id, uploaded_file):
+    """업로드된 파일을 Storage 버킷에 저장(같은 경로면 덮어씀)하고, 그 경로를
+    creative_screenshots 테이블에 upsert한다."""
+    client = get_supabase_client()
+    ext = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else "png"
+    storage_path = f"{adgroup_id}.{ext}"
+    client.storage.from_(CREATIVE_SCREENSHOT_BUCKET).upload(
+        storage_path, uploaded_file.getvalue(),
+        {"content-type": uploaded_file.type or "image/png", "upsert": "true"},
+    )
+    client.table("creative_screenshots").upsert({
+        "adgroup_id": adgroup_id,
+        "storage_path": storage_path,
+        "uploaded_at": datetime.datetime.utcnow().isoformat(),
+    }).execute()
+    fetch_creative_screenshot.clear()
+
+
+def get_screenshot_url(storage_path, uploaded_at=None):
+    """소재를 교체해도 storage_path(파일명)가 항상 adgroup_id 그대로라 URL이 똑같이
+    유지된다 — 그래서 실제 파일은 바뀌어도 브라우저(및 Supabase Storage 앞단 CDN)가
+    예전 URL의 캐시를 계속 보여주는 문제가 있었다(2026-08-04 실측 확인). 캡처를
+    새로 올릴 때마다 바뀌는 uploaded_at을 쿼리 파라미터로 붙여 URL 자체를 다르게
+    만들어서 캐시를 무효화한다."""
+    client = get_supabase_client()
+    url = client.storage.from_(CREATIVE_SCREENSHOT_BUCKET).get_public_url(storage_path)
+    if uploaded_at:
+        url = f"{url}?v={quote(str(uploaded_at))}"
+    return url
+
+
+def render_creative_screenshot_slot(adgroup_id):
+    """일별 유입 현황 표는 그대로 두고, 그 아래 차트 자리(세 유형 모두)를 실제
+    노출 화면 캡처로 대체한다(2026-07-31 실물 리포트 비교로 확인한 자리, 2026-08-04
+    플레이스도 통일) — API로 가져온 소재는 실제 노출 화면(사진/평점/태그 등 플레이스
+    프로필 데이터)과 시각적 차이가 커서 재현을 포기하고, 담당자가 직접 캡처해
+    올리는 방식으로 대체했다."""
+    st.markdown("**광고 소재**")
+    row = fetch_creative_screenshot(adgroup_id)
+    if row:
+        # width="stretch"는 컬럼 폭에 꽉 채워서 세로로 긴 캡처(플레이스처럼 모바일
+        # 화면 전체를 찍은 경우)가 비율 그대로 세로로 아주 커진다. 반대로 고정 폭
+        # (예: 260px)으로 다 맞추면 이번엔 가로로 넓은 캡처(파워컨텐츠처럼 짧고
+        # 넓은 경우)가 너무 작아진다(2026-08-04, 둘 다 실측으로 확인). 폭 대신
+        # 세로 높이만 상한을 두고 폭은 비율대로(최대 컬럼 폭까지) 자동으로 맞춘다 —
+        # st.image는 높이 상한을 못 걸어서 raw <img>로 직접 그린다.
+        img_url = get_screenshot_url(row["storage_path"], row.get("uploaded_at"))
+        st.markdown(
+            f'<img src="{img_url}" style="max-width:100%; max-height:280px; '
+            f'width:auto; height:auto; display:block;">',
+            unsafe_allow_html=True,
+        )
+    elif not st.session_state.get("is_admin"):
+        st.info("등록된 소재 캡처가 없습니다.")
+
+    if st.session_state.get("is_admin"):
+        expander_key = f"cv_creative_expander_{adgroup_id}"
+        just_saved_key = f"cv_creative_just_saved_{adgroup_id}"
+        # 위젯이 이미 그려진 "같은 실행" 안에서는 그 위젯의 session_state를 못 바꾼다
+        # (StreamlitAPIException, 2026-08-04 실측으로 확인) — 그래서 저장 버튼을 누른
+        # 실행에서는 "방금 저장했다" 신호만 별도 키에 남기고, 그 다음 실행에서 위젯을
+        # 만들기 전(여기)에 신호를 읽어 접은 상태로 초기화한다.
+        if st.session_state.pop(just_saved_key, False):
+            st.session_state[expander_key] = False
+        # key만 줘서는 열림 상태가 session_state에 반영되지 않는다 — on_change="rerun"을
+        # 같이 줘야 key가 실제로 expanded 상태를 추적한다(Streamlit 공식 문서 확인).
+        with st.expander(
+            "소재 캡처 이미지 교체" if row else "소재 캡처 이미지 등록",
+            key=expander_key, on_change="rerun",
+        ):
+            uploaded_file = st.file_uploader(
+                "캡처 이미지", type=["png", "jpg", "jpeg"],
+                key=f"cv_creative_upload_{adgroup_id}", label_visibility="collapsed",
+            )
+            if uploaded_file and st.button("저장", key=f"cv_creative_save_{adgroup_id}", width="stretch"):
+                upload_creative_screenshot(adgroup_id, uploaded_file)
+                st.session_state[just_saved_key] = True
+                st.session_state["cv_kwsave_result"] = True
+                st.rerun()
 
 
 def render_place_keyword_editor(adgroup_id, week_monday, existing_df):
@@ -418,9 +521,6 @@ def render_place_keyword_editor(adgroup_id, week_monday, existing_df):
         st.session_state["cv_kwsave_result"] = True
         st.rerun()
 
-    if st.session_state.get("cv_kwsave_result"):
-        _kwsave_result_dialog()
-
 
 def render_report_body(ad_type, adgroup, last_week_start, last_week_end):
     """입찰가 박스 + 일별/주간/Top10 표·차트 3분할 — 대표 광고그룹이든, 보름숲의
@@ -454,9 +554,12 @@ def render_report_body(ad_type, adgroup, last_week_start, last_week_end):
             # 총비용이 클릭률/CPC보다 앞에 있던 걸 뒤로 옮김.
             display_df = display_df[["날짜", "노출수", "클릭수", "클릭률(%)", "평균 CPC", "총비용"]]
             render_html_table(display_df)
-            render_dual_axis_chart(display_df, "날짜")
         else:
             st.info("데이터가 없습니다.")
+
+        # 표는 그대로 보여주고, 그 아래 차트 자리는 세 유형 다 실제 노출 화면
+        # 캡처로 대체한다(2026-08-04, 플레이스도 일별 차트 삭제하고 통일).
+        render_creative_screenshot_slot(adgroup_id)
 
     with col_weekly:
         st.markdown("**주간 유입 현황**")
@@ -620,6 +723,11 @@ else:
         with st.container(border=True, key=f"section_report_extra_{ag['nccAdgroupId']}"):
             st.markdown(f"### {ag.get('name') or '추가 광고그룹'}")
             render_report_body(ad_type, ag, week_monday, week_sunday)
+
+    # 모든 섹션을 다 그린 뒤 딱 한 곳에서만 체크 — 이유는 _kwsave_result_dialog
+    # 정의부 주석 참고.
+    if st.session_state.get("cv_kwsave_result"):
+        _kwsave_result_dialog()
 
     # 회의 중 자료를 끝까지 읽고 나면 다음 매장으로 넘기기 위해 맨 위로 다시
     # 스크롤해야 하는 게 불편하다는 요청(2026-07-31) — 맨 아래에도 매장 이동
