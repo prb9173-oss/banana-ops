@@ -330,18 +330,22 @@ def get_brand(store_name):
 
 
 def swap_keyword_group_order(keyword_groups, idx_a, idx_b):
-    """키워드 그룹(카드) 두 개의 표시 순서를 통째로 맞바꾼다. place_rank_keywords의
-    display_order는 원래 매장별로 독립적이었는데, 여기서는 '그룹을 순서대로 쭉 이어
-    붙였을 때의 위치'로 전체를 다시 매겨서 그룹 단위 정렬을 보장한다. 그룹 안에서
-    매장별 순서(같은 그룹 내 행 순서)는 그대로 유지한다."""
+    """키워드 그룹(카드) 두 개의 표시 순서를 맞바꾼다. ▲▼ 버튼은 항상 바로 옆
+    그룹과만 교환하므로(idx_a/idx_b가 항상 인접), 두 그룹 바깥의 나머지 그룹은
+    상대적 순서가 전혀 바뀌지 않는다 — 두 그룹에 속한 행들끼리만 display_order
+    값을 맞바꾸면 충분하다. (예전엔 전체 활성 키워드를 처음부터 다시 순번 매겨
+    매번 모든 행에 개별 update를 날렸는데, 키워드가 70개+인 상황에서 그룹 하나
+    옮길 때마다 최대 70여 번의 순차 네트워크 호출이 나가는 불필요한 비용이었다.)"""
     client = get_supabase_client()
-    reordered = list(keyword_groups)
-    reordered[idx_a], reordered[idx_b] = reordered[idx_b], reordered[idx_a]
-    counter = 0
-    for _, rows in reordered:
-        for row in rows:
-            client.table("place_rank_keywords").update({"display_order": counter}).eq("id", row["id"]).execute()
-            counter += 1
+    earlier_idx, later_idx = min(idx_a, idx_b), max(idx_a, idx_b)
+    rows_earlier = keyword_groups[earlier_idx][1]
+    rows_later = keyword_groups[later_idx][1]
+    orders = sorted(row["display_order"] for row in rows_earlier + rows_later)
+    # 원래 뒤에 있던 그룹이 앞으로 오므로 더 작은 order 값들을 받는다
+    for row, order in zip(rows_later, orders[:len(rows_later)]):
+        client.table("place_rank_keywords").update({"display_order": order}).eq("id", row["id"]).execute()
+    for row, order in zip(rows_earlier, orders[len(rows_later):]):
+        client.table("place_rank_keywords").update({"display_order": order}).eq("id", row["id"]).execute()
 
 
 def _toggle_report_keyword_group(checkbox_key, keyword_ids):

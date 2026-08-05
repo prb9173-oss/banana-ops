@@ -100,8 +100,6 @@ st.markdown(f"""
         border-radius: 999px;
         margin-bottom: 10px;
     }}
-    .pill-ready {{ background:#DCFCE7; color:#166534; }}
-    .pill-progress {{ background:#FEF3C7; color:#92400E; }}
     .pill-planned {{ background:#EEF3FA; color:{PRIMARY_HOVER}; }}
 
     /* 매장별 키워드 on/off 실시간 상태 목록 */
@@ -129,23 +127,8 @@ st.markdown(f"""
     .pill-rank-same {{ background:#F1F5F9; color:#64748B; margin-bottom: 0; }}
     .pill-rank-unknown {{ background:#FEF3C7; color:#92400E; margin-bottom: 0; }}
 
-    /* 플레이스 순위 결과 목록 (키워드별 현재 순위 + 전일 대비) */
-    .rank-status-card {{
-        padding: 4px 16px !important;
-        margin-bottom: 2px !important;
-    }}
-    .rank-status-row {{
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 0;
-        border-bottom: 1px solid #EEF0F3;
-    }}
-    .rank-status-row:last-child {{ border-bottom: none; }}
-    .rank-status-info {{ display: flex; flex-direction: column; }}
     .rank-kw {{ font-size: 13px; font-weight: 500; color: #5B6472; }}
     .rank-meta {{ font-size: 12px; color: {MUTED_TEXT}; margin-top: 2px; }}
-    .rank-status-value {{ display: flex; align-items: center; gap: 6px; }}
     .rank-top10 {{ font-size: 12px; color: #2563EB; }}
     .rank-snapshot-item {{ font-size: 12px; color: #16181D; line-height: 1.6; }}
 
