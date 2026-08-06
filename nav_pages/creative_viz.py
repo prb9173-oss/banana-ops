@@ -464,27 +464,21 @@ def render_creative_screenshot_slot(adgroup_id):
         st.info("등록된 소재 캡처가 없습니다.")
 
     if st.session_state.get("is_admin"):
-        expander_key = f"cv_creative_expander_{adgroup_id}"
-        just_saved_key = f"cv_creative_just_saved_{adgroup_id}"
-        # 위젯이 이미 그려진 "같은 실행" 안에서는 그 위젯의 session_state를 못 바꾼다
-        # (StreamlitAPIException, 2026-08-04 실측으로 확인) — 그래서 저장 버튼을 누른
-        # 실행에서는 "방금 저장했다" 신호만 별도 키에 남기고, 그 다음 실행에서 위젯을
-        # 만들기 전(여기)에 신호를 읽어 접은 상태로 초기화한다.
-        if st.session_state.pop(just_saved_key, False):
-            st.session_state[expander_key] = False
-        # key만 줘서는 열림 상태가 session_state에 반영되지 않는다 — on_change="rerun"을
-        # 같이 줘야 key가 실제로 expanded 상태를 추적한다(Streamlit 공식 문서 확인).
-        with st.expander(
-            "소재 캡처 이미지 교체" if row else "소재 캡처 이미지 등록",
-            key=expander_key, on_change="rerun",
-        ):
-            uploaded_file = st.file_uploader(
-                "캡처 이미지", type=["png", "jpg", "jpeg"],
-                key=f"cv_creative_upload_{adgroup_id}", label_visibility="collapsed",
-            )
-            if uploaded_file and st.button("저장", key=f"cv_creative_save_{adgroup_id}", width="stretch"):
+        st.caption("소재 캡처 이미지 교체" if row else "소재 캡처 이미지 등록")
+        uploaded_file = st.file_uploader(
+            "캡처 이미지", type=["png", "jpg", "jpeg"],
+            key=f"cv_creative_upload_{adgroup_id}", label_visibility="collapsed",
+        )
+        if uploaded_file:
+            # st.file_uploader는 한 번 선택된 파일을 리런마다 계속 그대로 돌려주므로,
+            # "저장" 버튼 없이 선택 즉시 업로드하면 이후 아무 리런에서나 같은 파일을
+            # 계속 재업로드해버린다 — file_id(선택될 때마다 새로 발급되는 고유값)를
+            # 마지막으로 처리한 값과 비교해서, 새로 선택된 파일일 때만 한 번 업로드한다.
+            last_id_key = f"cv_creative_last_upload_id_{adgroup_id}"
+            file_identity = getattr(uploaded_file, "file_id", None) or f"{uploaded_file.name}:{uploaded_file.size}"
+            if st.session_state.get(last_id_key) != file_identity:
                 upload_creative_screenshot(adgroup_id, uploaded_file)
-                st.session_state[just_saved_key] = True
+                st.session_state[last_id_key] = file_identity
                 st.session_state["cv_kwsave_result"] = True
                 st.rerun()
 
@@ -623,12 +617,31 @@ st.subheader("주간 광고 데이터")
 # 효과가 없었다(2026-08-01 실측 확인). st.markdown에 넣은 <script>는 Streamlit이
 # 실행 안 해줘서, components.html의 iframe에서 window.parent를 통해 실제 스크롤
 # 컨테이너를 찾아 스크롤한다(이 앱의 클립보드 복사 버튼 등에서 이미 쓰던 패턴).
+#
+# 간헐적으로 스크롤이 전혀 안 되는 버그가 실측 확인됐다(2026-08-05) — 재현/로깅해보니
+# 몇 초를 기다려도 scrollTop이 단 한 번도 변하지 않는 경우가 있었다(재시도 루프를
+# 넣어봐도 동일) — 즉 "실행됐다가 되돌려지는" 게 아니라 스크립트 자체가 아예 실행
+# 안 된 것으로 보인다. 이 컴포넌트의 HTML 내용이 매번 완전히 동일한 문자열이라,
+# Streamlit이 이전 실행에서 마운트했던 것과 "같은" iframe으로 보고 새로 마운트/실행을
+# 건너뛰는 것으로 추정된다(직접 만든 동일 iframe을 수동으로 새로 만들면 항상 성공하는
+# 것으로 확인 — 스크립트 자체 로직은 문제 없음). 매번 다른 타임스탬프를 주석으로 끼워
+# 넣어 내용을 매번 다르게 만들어서, Streamlit이 "이전과 다른 새 컴포넌트"로 인식해
+# 매번 확실히 새로 마운트/실행하도록 강제한다.
 if st.session_state.pop("cv_scroll_top_pending", False):
     components.html(
-        "<script>"
-        "var m = window.parent.document.querySelector('section[data-testid=\"stMain\"]');"
-        "if (m) { m.scrollTop = 0; }"
-        "</script>",
+        f"""
+        <script>
+        // {datetime.datetime.now().isoformat()} (매번 값이 달라야 재마운트가 보장됨)
+        (function() {{
+            var tries = 0;
+            var timer = setInterval(function() {{
+                var m = window.parent.document.querySelector('section[data-testid="stMain"]');
+                if (m) {{ m.scrollTop = 0; }}
+                if (++tries > 20) {{ clearInterval(timer); }}
+            }}, 100);
+        }})();
+        </script>
+        """,
         height=0,
     )
 
