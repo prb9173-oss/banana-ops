@@ -4,7 +4,7 @@ import streamlit.components.v1 as components
 # ==========================================
 # [내비게이션 셸] 사이드바 기능별 메뉴 + 카드형 콘텐츠 레이아웃
 # ==========================================
-st.set_page_config(page_title="banana-ops", layout="wide", page_icon="🍌")
+st.set_page_config(page_title="BananaWorks", layout="wide", page_icon="🍌")
 
 PRIMARY = "#3182F6"
 PRIMARY_HOVER = "#1B64DA"
