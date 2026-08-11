@@ -119,9 +119,9 @@ def render_html_table(df):
         '<table style="width:100%; border-collapse:collapse; text-align:center; '
         f'color:#16181D; border:1px solid {TABLE_BORDER}; white-space:nowrap;">'
     )
-    html += f'<thead><tr style="background-color:{TABLE_HEADER_BG}; border-bottom:2px solid {TABLE_BORDER}; font-weight:600;">'
+    html += f'<thead><tr style="background-color:{TABLE_HEADER_BG}; border-bottom:2px solid {TABLE_BORDER}; font-weight:700;">'
     for col in df.columns:
-        html += f'<th style="padding:8px; border:1px solid {TABLE_BORDER}; font-size:13px;">{col}</th>'
+        html += f'<th style="padding:10px 6px; border:1px solid {TABLE_BORDER}; font-size:16px;">{col}</th>'
     html += '</tr></thead><tbody>'
     for _, row in df.iterrows():
         html += f'<tr style="background-color:#FFFFFF; border-bottom:1px solid {TABLE_BORDER};">'
@@ -135,7 +135,7 @@ def render_html_table(df):
                 formatted = f"{int(val):,}"
             else:
                 formatted = str(val)
-            html += f'<td style="padding:6px; border:1px solid {TABLE_BORDER}; font-size:12.5px;">{formatted}</td>'
+            html += f'<td style="padding:8px 6px; border:1px solid {TABLE_BORDER}; font-size:16px; font-weight:500;">{formatted}</td>'
         html += '</tr>'
     html += '</tbody></table>'
     st.markdown(html, unsafe_allow_html=True)
@@ -163,24 +163,24 @@ def render_dual_axis_chart(df, x_col):
             f"{x_col}:N",
             sort=None,
             title=None,
-            axis=alt.Axis(labelAngle=0, labelFontSize=10),
+            axis=alt.Axis(labelAngle=0, labelFontSize=13),
         )
     )
-    bars = base.mark_bar(size=10, color="#3182F6").encode(
-        y=alt.Y("노출수:Q", axis=alt.Axis(title=None)),
+    bars = base.mark_bar(size=14, color="#3182F6").encode(
+        y=alt.Y("노출수:Q", axis=alt.Axis(title=None, labelFontSize=12)),
         tooltip=[x_col, "노출수"],
     )
     line = base.mark_line(color="#F97316", point=True, strokeWidth=2).encode(
-        y=alt.Y("클릭수:Q", axis=alt.Axis(title=None)),
+        y=alt.Y("클릭수:Q", axis=alt.Axis(title=None, labelFontSize=12)),
         tooltip=[x_col, "클릭수"],
     )
-    chart = alt.layer(bars, line).resolve_scale(y="independent").properties(height=260)
+    chart = alt.layer(bars, line).resolve_scale(y="independent").properties(height=280)
     st.altair_chart(chart, use_container_width=True)
     st.markdown(
         '''
-        <div style="display:flex; gap:12px; font-size:11px; color:#5B6472; margin-top:-8px;">
-            <span><span style="display:inline-block; width:8px; height:8px; background:#3182F6; border-radius:2px; margin-right:3px;"></span>노출수</span>
-            <span><span style="display:inline-block; width:8px; height:8px; background:#F97316; border-radius:2px; margin-right:3px;"></span>클릭수</span>
+        <div style="display:flex; gap:16px; font-size:14px; color:#5B6472; margin-top:-4px;">
+            <span><span style="display:inline-block; width:10px; height:10px; background:#3182F6; border-radius:2px; margin-right:4px;"></span>노출수</span>
+            <span><span style="display:inline-block; width:10px; height:10px; background:#F97316; border-radius:2px; margin-right:4px;"></span>클릭수</span>
         </div>
         ''',
         unsafe_allow_html=True,
@@ -322,19 +322,19 @@ def render_bid_info(ad_type, adgroup, week_monday):
         for name, val, extra in rows:
             html += '<tr>'
             html += (
-                f'<td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; background:{TABLE_HEADER_BG}; '
-                f'font-weight:600; font-size:12.5px; white-space:nowrap;">{name}</td>'
+                f'<td style="padding:9px 12px; border:1px solid {TABLE_BORDER}; background:{TABLE_HEADER_BG}; '
+                f'font-weight:700; font-size:16px; white-space:nowrap;">{name}</td>'
             )
             if extra is not None:
-                html += f'<td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; font-size:12.5px;">{val}</td>'
+                html += f'<td style="padding:9px 12px; border:1px solid {TABLE_BORDER}; font-size:16px; font-weight:500;">{val}</td>'
                 html += (
-                    f'<td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; font-size:12.5px; '
+                    f'<td style="padding:9px 12px; border:1px solid {TABLE_BORDER}; font-size:16px; font-weight:500; '
                     f'text-align:right;">{extra}</td>'
                 )
             else:
                 html += (
-                    f'<td colspan="2" style="padding:6px 10px; border:1px solid {TABLE_BORDER}; '
-                    f'font-size:12.5px;">{val}</td>'
+                    f'<td colspan="2" style="padding:9px 12px; border:1px solid {TABLE_BORDER}; '
+                    f'font-size:16px; font-weight:500;">{val}</td>'
                 )
             html += '</tr>'
         html += '</table>'
@@ -373,7 +373,7 @@ def render_bid_info(ad_type, adgroup, week_monday):
             else:
                 note_text = st.session_state.get(note_key, "").strip()
                 st.markdown(
-                    f'<div style="font-size:13px; color:#16181D; padding-top:8px;">'
+                    f'<div style="font-size:16px; color:#16181D; padding-top:10px;">'
                     f'<b>* 특이사항</b> - {note_text or "없음"}</div>',
                     unsafe_allow_html=True,
                 )
@@ -456,7 +456,7 @@ def render_creative_screenshot_slot(adgroup_id):
         # st.image는 높이 상한을 못 걸어서 raw <img>로 직접 그린다.
         img_url = get_screenshot_url(row["storage_path"], row.get("uploaded_at"))
         st.markdown(
-            f'<img src="{img_url}" style="max-width:100%; max-height:280px; '
+            f'<img src="{img_url}" style="max-width:100%; max-height:340px; '
             f'width:auto; height:auto; display:block;">',
             unsafe_allow_html=True,
         )
@@ -516,18 +516,39 @@ def render_place_keyword_editor(adgroup_id, week_monday, existing_df):
         st.rerun()
 
 
-def render_report_body(ad_type, adgroup, last_week_start, last_week_end):
-    """입찰가 박스 + 일별/주간/Top10 표·차트 3분할 — 대표 광고그룹이든, 보름숲의
-    "보름숲 통대관"처럼 별도로 보여주는 추가 광고그룹이든 똑같이 이 본문을 쓴다."""
-    render_bid_info(ad_type, adgroup, last_week_start)
+@st.dialog("일별 유입 현황", width="large")
+def _render_daily_stats_dialog(display_df):
+    render_html_table(display_df)
 
+
+def render_report_body(title, ad_type, adgroup, last_week_start, last_week_end):
+    """제목 줄 + 입찰가 박스 + 일별/주간/Top10 표·차트 3분할 — 대표 광고그룹이든,
+    보름숲의 "보름숲 통대관"처럼 별도로 보여주는 추가 광고그룹이든 똑같이 이
+    본문을 쓴다."""
     adgroup_id = adgroup["nccAdgroupId"]
     four_weeks_start = last_week_start - datetime.timedelta(weeks=3)  # 선택한 주 포함 4주 전 월요일
 
     daily_recent, err = fetch_daily_stats(adgroup_id, last_week_start, last_week_end)
+
+    st.markdown(f"### {title}")
+
+    # 일별 유입 현황 팝업 버튼용 데이터 — 버튼 자체는 아래 "주간 유입 현황"
+    # 제목 옆에 작게 그린다(2026-08-11, 처음엔 광고 블록 제목 옆에 큰 버튼으로
+    # 뒀는데 너무 커 보인다는 피드백을 받아 위치/크기를 다시 조정).
+    display_df = None
+    if daily_recent is not None and not daily_recent.empty:
+        display_df = with_ctr_cpc(daily_recent).copy()
+        display_df["날짜"] = display_df["날짜"].apply(lambda d: d.strftime("%m/%d"))
+        # 원본 리포트와 같은 순서(노출수·클릭수·클릭률·CPC·총비용)로 맞춘다 —
+        # 총비용이 클릭률/CPC보다 앞에 있던 걸 뒤로 옮김.
+        display_df = display_df[["날짜", "노출수", "클릭수", "클릭률(%)", "평균 CPC", "총비용"]]
+
     if err:
         st.error(f"❌ 일별 유입 현황을 가져오는 중 오류가 발생했습니다: {err}")
         return
+
+    render_bid_info(ad_type, adgroup, last_week_start)
+
     daily_month, err = fetch_daily_stats(adgroup_id, four_weeks_start, last_week_end)
     if err:
         st.error(f"❌ 주간 유입 현황을 가져오는 중 오류가 발생했습니다: {err}")
@@ -537,26 +558,22 @@ def render_report_body(ad_type, adgroup, last_week_start, last_week_end):
         st.error(f"❌ 상위 클릭 키워드를 가져오는 중 오류가 발생했습니다: {err}")
         return
 
-    col_daily, col_weekly, col_keywords = st.columns(3)
-
-    with col_daily:
-        st.markdown("**일별 유입 현황**")
-        if daily_recent is not None and not daily_recent.empty:
-            display_df = with_ctr_cpc(daily_recent).copy()
-            display_df["날짜"] = display_df["날짜"].apply(lambda d: d.strftime("%m/%d"))
-            # 원본 리포트와 같은 순서(노출수·클릭수·클릭률·CPC·총비용)로 맞춘다 —
-            # 총비용이 클릭률/CPC보다 앞에 있던 걸 뒤로 옮김.
-            display_df = display_df[["날짜", "노출수", "클릭수", "클릭률(%)", "평균 CPC", "총비용"]]
-            render_html_table(display_df)
-        else:
-            st.info("데이터가 없습니다.")
-
-        # 표는 그대로 보여주고, 그 아래 차트 자리는 세 유형 다 실제 노출 화면
-        # 캡처로 대체한다(2026-08-04, 플레이스도 일별 차트 삭제하고 통일).
-        render_creative_screenshot_slot(adgroup_id)
+    with st.container(key=f"cv_report_row_{adgroup_id}"):
+        col_weekly, col_keywords, col_creative = st.columns(3)
 
     with col_weekly:
-        st.markdown("**주간 유입 현황**")
+        # 이 작은 제목+버튼 줄은 반드시 별도 key로 감싼다 — cv_report_row에 걸린
+        # flex-wrap/최소폭 CSS가 후손 선택자(space)라서, 감싸지 않으면 이 안쪽의
+        # 중첩 컬럼에도 그대로 적용되어 버튼이 강제로 줄바꿈되며 전체 폭으로
+        # 늘어나는 버그가 있었다(2026-08-11).
+        with st.container(key=f"cv_weekly_header_{adgroup_id}"):
+            sub_title, sub_daily_btn = st.columns([3, 1.4])
+            with sub_title:
+                st.markdown("**주간 유입 현황**")
+            with sub_daily_btn:
+                if display_df is not None:
+                    if st.button("일별 보기", key=f"cv_daily_btn_{adgroup_id}"):
+                        _render_daily_stats_dialog(display_df)
         weekly_df = build_weekly_table(daily_month) if daily_month is not None else None
         if weekly_df is not None and not weekly_df.empty:
             render_html_table(weekly_df.drop(columns=["주차"]))
@@ -573,6 +590,9 @@ def render_report_body(ad_type, adgroup, last_week_start, last_week_end):
         else:
             st.info("데이터가 없습니다.")
 
+    with col_creative:
+        render_creative_screenshot_slot(adgroup_id)
+
 
 def render_ad_type_report(store_name, ad_type, label, section_key, last_week_start, last_week_end):
     """플레이스/파워링크/파워컨텐츠 3개 구간 중 하나를 그린다. 대표 광고그룹 외에
@@ -586,11 +606,11 @@ def render_ad_type_report(store_name, ad_type, label, section_key, last_week_sta
         return []  # 캠페인 자체가 없음 — 제목/박스 없이 완전히 생략
 
     with st.container(border=True, key=section_key):
-        st.markdown(f"### {label}")
         if err:
+            st.markdown(f"### {label}")
             st.error(f"❌ {label} 데이터를 가져오는 중 오류가 발생했습니다: {err}")
             return []
-        render_report_body(ad_type, adgroup, last_week_start, last_week_end)
+        render_report_body(label, ad_type, adgroup, last_week_start, last_week_end)
     return [(ad_type, ag) for ag in extra_adgroups]
 
 
@@ -734,8 +754,7 @@ else:
     # 맨 아래에 실제 광고그룹 이름 그대로 따로 몰아서 보여준다.
     for ad_type, ag in extra_adgroups:
         with st.container(border=True, key=f"section_report_extra_{ag['nccAdgroupId']}"):
-            st.markdown(f"### {ag.get('name') or '추가 광고그룹'}")
-            render_report_body(ad_type, ag, week_monday, week_sunday)
+            render_report_body(ag.get("name") or "추가 광고그룹", ad_type, ag, week_monday, week_sunday)
 
     # 모든 섹션을 다 그린 뒤 딱 한 곳에서만 체크 — 이유는 _kwsave_result_dialog
     # 정의부 주석 참고.

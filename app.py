@@ -478,9 +478,9 @@ st.markdown(f"""
        써서 합산 폭이 컨테이너보다 미세하게(수 px) 넘쳐 자동으로 줄바꿈되는
        버그가 났었다(플레이스광고의 평균입찰가 입력칸이 있을 때만 재현됨). */
     div[class*="st-key-cv_bid_row"] div[data-testid="stColumn"]:first-child {{
-        flex: 0 0 230px !important;
-        width: 230px !important;
-        min-width: 230px !important;
+        flex: 0 0 300px !important;
+        width: 300px !important;
+        min-width: 300px !important;
     }}
     div[class*="st-key-cv_bid_row"] div[data-testid="stColumn"]:last-child {{
         flex: 1 1 0% !important;
@@ -491,6 +491,80 @@ st.markdown(f"""
        여백을 줄여서 표와 더 가까이 붙게 한다. */
     div[class*="st-key-cv_avgbid_"] {{
         margin-top: 2px !important;
+    }}
+    /* cv_report_row: 주간(표+차트)/키워드(표)/광고소재(이미지) 3칸 — 빔프로젝터로
+       회의 때 다 같이 보므로 글자를 키웠다. flex-wrap을 켜서, 화면이 충분히 넓으면
+       3칸이 나란히 있다가 좁아지면 자동으로 세로로 쌓이게 한다. 일별 유입 현황
+       표는 팝업(맨 아래 버튼)으로 옮겨서(2026-08-11) 이 행에서 빠졌다. 표 글자는
+       18px에서 다시 16px로 되돌렸고(2026-08-11), 광고소재 칸은 이미지가 너무
+       작게 나온다는 피드백을 받아 최소 폭을 200px→340px로 넉넉하게 키웠다 —
+       가로로 넓은 캡처(파워컨텐츠 등)가 좁은 칸 폭에 눌려 작아지는 문제였다. */
+    div[class*="st-key-cv_report_row"] div[data-testid="stHorizontalBlock"] {{
+        flex-wrap: wrap !important;
+    }}
+    div[class*="st-key-cv_report_row"] div[data-testid="stColumn"]:nth-child(1) {{
+        flex: 1 1 495px !important;
+        min-width: 495px !important;
+    }}
+    div[class*="st-key-cv_report_row"] div[data-testid="stColumn"]:nth-child(2) {{
+        flex: 1 1 325px !important;
+        min-width: 325px !important;
+    }}
+    div[class*="st-key-cv_report_row"] div[data-testid="stColumn"]:nth-child(3) {{
+        flex: 1 1 340px !important;
+        min-width: 340px !important;
+    }}
+    /* cv_weekly_header: "주간 유입 현황" 제목 + 작은 일별 유입 현황 팝업 버튼을
+       한 줄에 담는 중첩 컬럼. cv_report_row의 flex-wrap/최소폭 규칙이 후손
+       선택자라 이 안쪽 중첩 컬럼에도 그대로 걸려서 버튼이 줄바꿈되고 전체 폭
+       으로 늘어나는 버그가 있었다(2026-08-11) — 이 컨테이너 안에서는 명시적으로
+       다시 nowrap/자동폭으로 되돌린다. */
+    div[class*="st-key-cv_weekly_header_"] div[data-testid="stHorizontalBlock"] {{
+        flex-wrap: nowrap !important;
+        gap: 6px !important;
+        align-items: center !important;
+    }}
+    /* 컬럼을 [3, 1.4] 비율 그대로 두면 제목 텍스트가 짧아도 버튼이 그 비율의
+       고정 시작 지점(컬럼 경계)에서만 시작해 텍스트와 버튼 사이에 큰 여백이
+       생긴다 — "바로 옆에 붙여달라"는 요청(2026-08-11)에 맞춰 두 컬럼 모두
+       내용물 크기만큼만 차지하게(hug content) 바꿔서 텍스트 바로 뒤에 버튼이
+       붙게 한다. cv_nav_row에서 이미 쓰던 것과 같은 패턴.
+       **실제 버그**: 처음엔 `:nth-child` 없이 이 선택자를 썼는데, cv_report_row의
+       `div[...] div[...]:nth-child(1)` 규칙(특이도 0,3,2)이 이 규칙(특이도 0,2,2,
+       nth-child 없음)보다 특이도가 더 높아서 !important끼리 붙어도 특이도가 낮은
+       쪽이 졌다 — 소스 순서상 이 규칙이 더 뒤에 있어도 특이도가 우선이라 안
+       먹혔다. `:nth-child(1)`/`:nth-child(2)`를 그대로 붙여 특이도를 맞추고,
+       그제서야(소스 순서가 더 뒤이므로) 이 규칙이 이긴다. */
+    div[class*="st-key-cv_weekly_header_"] div[data-testid="stColumn"]:nth-child(1),
+    div[class*="st-key-cv_weekly_header_"] div[data-testid="stColumn"]:nth-child(2) {{
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: unset !important;
+    }}
+    /* 일별 유입 현황 팝업 버튼 — "주간 유입 현황" 제목 바로 옆에 작게 붙인다.
+       처음엔 광고 블록 제목 옆에 기본 크기 버튼으로 뒀는데 너무 커 보인다는
+       피드백을 받아(2026-08-11) 위치를 옮기고, 이어서 이모지를 빼고 파란
+       배경 대신 테두리만 있는 모던한 고스트 스타일로 바꿨다. min-height를
+       같이 unset해야 Streamlit 기본 버튼의 숨은 최소 높이가 작은 height를
+       무시하지 않는다. */
+    div[class*="st-key-cv_daily_btn_"] button {{
+        background-color: transparent !important;
+        border: 1px solid {BORDER} !important;
+        border-radius: 6px !important;
+        padding: 0.32rem 0.6rem !important;
+        font-size: 11.5px !important;
+        min-height: unset !important;
+        height: auto !important;
+        line-height: 1 !important;
+        box-shadow: none !important;
+    }}
+    div[class*="st-key-cv_daily_btn_"] button:hover {{
+        background-color: #F1F5F9 !important;
+        border-color: {PRIMARY} !important;
+    }}
+    div[class*="st-key-cv_daily_btn_"] button p {{
+        color: {MUTED_TEXT} !important;
+        font-weight: 600 !important;
     }}
     /* 수정/삭제는 감싸는 박스(배경+테두리) 없이 아이콘만 — 대신 아이콘을 outline이
        아니라 채워진(filled) 스타일로 바꿔서 박스 없이도 잘 보이게 한다. */
