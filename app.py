@@ -694,9 +694,8 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 pages = [
-    st.Page("nav_pages/data_extractor.py", title="광고 데이터 추출기", icon=":material/monitoring:", default=True),
     st.Page("nav_pages/season_keywords.py", title="시즌 키워드 관리", icon=":material/eco:"),
-    st.Page("nav_pages/creative_viz.py", title="주간 광고 데이터", icon=":material/dashboard:"),
+    st.Page("nav_pages/creative_viz.py", title="주간 광고 데이터", icon=":material/dashboard:", default=True),
     st.Page("nav_pages/place_rank.py", title="플레이스 순위 추적", icon=":material/location_on:"),
 ]
 
@@ -829,7 +828,7 @@ def _admin_login_dialog():
             st.error("비밀번호가 올바르지 않습니다.")
 
 
-# pg.run() 앞에 둬야 한다 — data_extractor.py 등 일부 페이지가 특정 상태에서
+# pg.run() 앞에 둬야 한다 — place_rank.py 등 일부 페이지가 특정 상태에서
 # st.stop()을 호출하는데, st.stop()은 (그 페이지만이 아니라) app.py 스크립트
 # 실행 자체를 그 자리에서 완전히 멈춰버린다. pg.run() 뒤에 두면 그런 페이지에서는
 # 이 블록이 아예 렌더링되지 않아 관리자 버튼이 사라지는 문제가 있었다 — 대신 항상
