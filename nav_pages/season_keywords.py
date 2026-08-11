@@ -4,16 +4,11 @@ import hashlib
 import base64
 import requests
 import streamlit as st
-from supabase import create_client
+
+from nav_pages._shared import get_supabase_client
 
 NAVER_BASE_URL = "https://api.searchad.naver.com"
 NAVER_REQUEST_TIMEOUT = 10
-
-
-@st.cache_resource
-def get_supabase_client():
-    sb = st.secrets["supabase"]
-    return create_client(sb["url"], sb["key"])
 
 
 def _naver_signature(timestamp, method, uri, secret_key):

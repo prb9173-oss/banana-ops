@@ -3,15 +3,10 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 import streamlit.components.v1 as components
-from supabase import create_client
+
+from nav_pages._shared import get_supabase_client
 
 KST = ZoneInfo("Asia/Seoul")
-
-
-@st.cache_resource
-def get_supabase_client():
-    sb = st.secrets["supabase"]
-    return create_client(sb["url"], sb["key"])
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -348,18 +343,12 @@ def swap_keyword_group_order(keyword_groups, idx_a, idx_b):
         client.table("place_rank_keywords").update({"display_order": order}).eq("id", row["id"]).execute()
 
 
-def _toggle_report_keyword_group(checkbox_key, keyword_ids):
-    """같은 키워드 그룹의 매장들은 항상 다 같이 보고용에 포함되거나 다 같이 빠지지,
-    지점별로 다르게 쓸 일이 없어서 그룹(키워드) 전체 행에 한 번에 적용한다."""
+def _toggle_keyword_group_field(field_name, checkbox_key, keyword_ids):
+    """같은 키워드 그룹의 매장들은 항상 다 같이 보고용/회의용에 포함되거나 다 같이
+    빠지지, 지점별로 다르게 쓸 일이 없어서 그룹(키워드) 전체 행에 한 번에 적용한다.
+    field_name은 "is_report_keyword" 또는 "is_meeting_keyword"."""
     get_supabase_client().table("place_rank_keywords").update(
-        {"is_report_keyword": st.session_state[checkbox_key]}
-    ).in_("id", keyword_ids).execute()
-    fetch_all_keywords.clear()
-
-
-def _toggle_meeting_keyword_group(checkbox_key, keyword_ids):
-    get_supabase_client().table("place_rank_keywords").update(
-        {"is_meeting_keyword": st.session_state[checkbox_key]}
+        {field_name: st.session_state[checkbox_key]}
     ).in_("id", keyword_ids).execute()
     fetch_all_keywords.clear()
 
@@ -686,8 +675,8 @@ with tab_manage:
                                     "보고용",
                                     value=bool(rep_row.get("is_report_keyword")),
                                     key=report_chk_key,
-                                    on_change=_toggle_report_keyword_group,
-                                    args=(report_chk_key, keyword_ids),
+                                    on_change=_toggle_keyword_group_field,
+                                    args=("is_report_keyword", report_chk_key, keyword_ids),
                                 )
                             with col_report_topn:
                                 report_topn_key = f"report_topn_{group_key}"
@@ -706,8 +695,8 @@ with tab_manage:
                                     "회의용",
                                     value=rep_row.get("is_meeting_keyword", True),
                                     key=meeting_chk_key,
-                                    on_change=_toggle_meeting_keyword_group,
-                                    args=(meeting_chk_key, keyword_ids),
+                                    on_change=_toggle_keyword_group_field,
+                                    args=("is_meeting_keyword", meeting_chk_key, keyword_ids),
                                 )
                             with col_meeting_topn:
                                 meeting_topn_key = f"meeting_topn_{group_key}"

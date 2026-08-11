@@ -1,10 +1,9 @@
 import logging
-import os
 import time
 
 import requests
 
-from supabase import create_client
+from _shared import get_supabase_client
 
 GRAPHQL_URL = "https://api.place.naver.com/graphql"
 # 네이버가 위치 권한 없을 때 쓰는 기본 좌표(서울시청 부근). 기존 Selenium 스크래퍼도
@@ -46,16 +45,6 @@ query getRestaurants($input: PlaceListInput) {
   }
 }
 """
-
-
-def get_supabase_client():
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        import toml
-        sb = toml.load(".streamlit/secrets.toml")["supabase"]
-        url, key = sb["url"], sb["key"]
-    return create_client(url, key)
 
 
 def fetch_active_keyword_rows(client):

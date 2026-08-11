@@ -4,13 +4,8 @@ import datetime
 from urllib.parse import quote
 import pandas as pd
 import altair as alt
-from supabase import create_client
 
-
-@st.cache_resource
-def get_supabase_client():
-    sb = st.secrets["supabase"]
-    return create_client(sb["url"], sb["key"])
+from nav_pages._shared import get_supabase_client
 
 
 def month_week_label(monday):

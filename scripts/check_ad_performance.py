@@ -3,12 +3,11 @@ import hashlib
 import hmac
 import base64
 import logging
-import os
 import time
 
 import requests
 
-from supabase import create_client
+from _shared import get_supabase_client
 
 REQUEST_TIMEOUT = 10
 BASE_URL = "https://api.searchad.naver.com"
@@ -33,16 +32,6 @@ AD_TYPE_LABEL = {
     "파워링크광고": "파워링크",
     "파워컨텐츠광고": "파워컨텐츠",
 }
-
-
-def get_supabase_client():
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        import toml
-        sb = toml.load(".streamlit/secrets.toml")["supabase"]
-        url, key = sb["url"], sb["key"]
-    return create_client(url, key)
 
 
 def get_naver_accounts():
