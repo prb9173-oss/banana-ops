@@ -459,6 +459,11 @@ st.markdown(f"""
     div[class*="st-key-cv_nav_row"] div[data-testid="stColumn"]:has(div[class*="st-key-cv_week_prev"]) {{
         margin-left: 16px !important;
     }}
+    /* "기본"/"회의" 보기 모드 토글도 주차 그룹과 같은 방식으로 구분한다 — N월
+       N주차 선택 영역 바로 오른쪽에 여백을 두고 붙인다(2026-08-11). */
+    div[class*="st-key-cv_nav_row"] div[data-testid="stColumn"]:has(div[class*="st-key-cv_view_mode"]) {{
+        margin-left: 16px !important;
+    }}
     /* selectbox 드롭다운 팝업(포털이라 특정 위젯만 콕 집어 타겟팅 불가, 앱 전체
        적용) 세로 길이를 줄여서 목록이 많아도 화면을 과하게 덮지 않게 한다. */
     div[data-testid="stSelectboxVirtualDropdown"] div[role="listbox"] {{
@@ -483,6 +488,20 @@ st.markdown(f"""
         min-width: 300px !important;
     }}
     div[class*="st-key-cv_bid_row"] div[data-testid="stColumn"]:last-child {{
+        flex: 1 1 0% !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }}
+    /* "기본" 모드(2026-08-11 가독성 개선 이전 원본 레이아웃)의 입찰가 표 — 글자가
+       12.5px로 작아서 원본 그대로 230px 고정폭이면 충분하다. 위 cv_bid_row 규칙과
+       똑같이 "표는 작게, 특이사항 칸이 남는 폭 전부"로 재지정해야 한다(한쪽만
+       고치면 나머지가 비율 기반 flex-basis를 그대로 써서 줄바꿈되는 버그 재발). */
+    div[class*="st-key-cv_bidinfo_legacy_"] div[data-testid="stColumn"]:first-child {{
+        flex: 0 0 230px !important;
+        width: 230px !important;
+        min-width: 230px !important;
+    }}
+    div[class*="st-key-cv_bidinfo_legacy_"] div[data-testid="stColumn"]:last-child {{
         flex: 1 1 0% !important;
         width: auto !important;
         min-width: 0 !important;

@@ -141,6 +141,35 @@ def render_html_table(df):
     st.markdown(html, unsafe_allow_html=True)
 
 
+def render_html_table_legacy(df):
+    """render_html_table의 2026-08-11 가독성 개선 이전 원본 — "기본" 모드(회의 모드가
+    아닐 때)에서 그대로 쓴다. 글자 12.5~13px로 더 작지만 화면을 더 컴팩트하게 쓴다."""
+    html = (
+        '<table style="width:100%; border-collapse:collapse; text-align:center; '
+        f'color:#16181D; border:1px solid {TABLE_BORDER}; white-space:nowrap;">'
+    )
+    html += f'<thead><tr style="background-color:{TABLE_HEADER_BG}; border-bottom:2px solid {TABLE_BORDER}; font-weight:600;">'
+    for col in df.columns:
+        html += f'<th style="padding:8px; border:1px solid {TABLE_BORDER}; font-size:13px;">{col}</th>'
+    html += '</tr></thead><tbody>'
+    for _, row in df.iterrows():
+        html += f'<tr style="background-color:#FFFFFF; border-bottom:1px solid {TABLE_BORDER};">'
+        for col in df.columns:
+            val = row[col]
+            if col in WON_COLUMNS:
+                formatted = f"{int(val):,}원"
+            elif "클릭률" in col:
+                formatted = f"{val:.2f}%"
+            elif isinstance(val, (int, float)):
+                formatted = f"{int(val):,}"
+            else:
+                formatted = str(val)
+            html += f'<td style="padding:6px; border:1px solid {TABLE_BORDER}; font-size:12.5px;">{formatted}</td>'
+        html += '</tr>'
+    html += '</tbody></table>'
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def with_ctr_cpc(df):
     """노출수/클릭수/총비용으로부터 클릭률·평균CPC를 계산해 붙인다 — 일별 값을 그대로
     평균 내지 않고, 합산된 노출/클릭/비용에서 다시 계산해야 주간 합계표에서 정확하다."""
@@ -181,6 +210,38 @@ def render_dual_axis_chart(df, x_col):
         <div style="display:flex; gap:16px; font-size:14px; color:#5B6472; margin-top:-4px;">
             <span><span style="display:inline-block; width:10px; height:10px; background:#3182F6; border-radius:2px; margin-right:4px;"></span>노출수</span>
             <span><span style="display:inline-block; width:10px; height:10px; background:#F97316; border-radius:2px; margin-right:4px;"></span>클릭수</span>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+
+
+def render_dual_axis_chart_legacy(df, x_col):
+    """render_dual_axis_chart의 2026-08-11 가독성 개선 이전 원본 — "기본" 모드에서
+    그대로 쓴다."""
+    base = alt.Chart(df).encode(
+        x=alt.X(
+            f"{x_col}:N",
+            sort=None,
+            title=None,
+            axis=alt.Axis(labelAngle=0, labelFontSize=10),
+        )
+    )
+    bars = base.mark_bar(size=10, color="#3182F6").encode(
+        y=alt.Y("노출수:Q", axis=alt.Axis(title=None)),
+        tooltip=[x_col, "노출수"],
+    )
+    line = base.mark_line(color="#F97316", point=True, strokeWidth=2).encode(
+        y=alt.Y("클릭수:Q", axis=alt.Axis(title=None)),
+        tooltip=[x_col, "클릭수"],
+    )
+    chart = alt.layer(bars, line).resolve_scale(y="independent").properties(height=260)
+    st.altair_chart(chart, use_container_width=True)
+    st.markdown(
+        '''
+        <div style="display:flex; gap:12px; font-size:11px; color:#5B6472; margin-top:-8px;">
+            <span><span style="display:inline-block; width:8px; height:8px; background:#3182F6; border-radius:2px; margin-right:3px;"></span>노출수</span>
+            <span><span style="display:inline-block; width:8px; height:8px; background:#F97316; border-radius:2px; margin-right:3px;"></span>클릭수</span>
         </div>
         ''',
         unsafe_allow_html=True,
@@ -379,6 +440,88 @@ def render_bid_info(ad_type, adgroup, week_monday):
                 )
 
 
+def render_bid_info_legacy(ad_type, adgroup, week_monday):
+    """render_bid_info의 2026-08-11 가독성 개선 이전 원본 — "기본" 모드에서 그대로
+    쓴다. 평균입찰가/특이사항 값 자체는 render_bid_info와 완전히 같은 avg_key/note_key
+    (adgroup_id+week_monday)를 그대로 써서 DB/session_state를 공유한다 — 모드를
+    바꿔도 관리자가 입력한 값이 서로 다르게 보이거나 사라지지 않는다. 표 스타일
+    (글자 크기 등)만 원본 그대로 별도로 그린다. 입찰가 표 칸 폭도 원본 그대로
+    230px를 쓰기 위해 컨테이너 key를 cv_bidinfo_legacy_로 구분한다 — "cv_bid_row_legacy"처럼
+    "cv_bid_row"를 접두사로 포함하는 이름을 썼다면, app.py의 `[class*="st-key-cv_bid_row"]`
+    (부분 문자열 매칭) 규칙이 그대로 걸려버렸을 것이다(2026-08-03 season_keywords에서도
+    겪은 것과 같은 종류의 key 접두사 충돌 — 관련 규칙 이름은 아예 겹치지 않게 짓는다)."""
+    is_admin = st.session_state.get("is_admin")
+    adgroup_id = adgroup["nccAdgroupId"]
+    bid_amt = adgroup.get("bidAmt", 0)
+    avg_key = f"cv_avgbid_{adgroup_id}_{week_monday.isoformat()}"
+    note_key = f"cv_note_{adgroup_id}_{week_monday.isoformat()}"
+
+    if avg_key not in st.session_state or note_key not in st.session_state:
+        db_avg, db_note = fetch_admin_note(adgroup_id, week_monday)
+        st.session_state.setdefault(avg_key, db_avg)
+        st.session_state.setdefault(note_key, db_note)
+
+    def _save_admin_note():
+        upsert_admin_note(adgroup_id, week_monday, st.session_state[avg_key], st.session_state[note_key])
+
+    def _build_table(rows):
+        html = f'<table style="border-collapse:collapse; border:1px solid {TABLE_BORDER};">'
+        for name, val, extra in rows:
+            html += '<tr>'
+            html += (
+                f'<td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; background:{TABLE_HEADER_BG}; '
+                f'font-weight:600; font-size:12.5px; white-space:nowrap;">{name}</td>'
+            )
+            if extra is not None:
+                html += f'<td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; font-size:12.5px;">{val}</td>'
+                html += (
+                    f'<td style="padding:6px 10px; border:1px solid {TABLE_BORDER}; font-size:12.5px; '
+                    f'text-align:right;">{extra}</td>'
+                )
+            else:
+                html += (
+                    f'<td colspan="2" style="padding:6px 10px; border:1px solid {TABLE_BORDER}; '
+                    f'font-size:12.5px;">{val}</td>'
+                )
+            html += '</tr>'
+        html += '</table>'
+        return html
+
+    with st.container(key=f"cv_bidinfo_legacy_{adgroup_id}"):
+        col_bid, col_note = st.columns([1, 2])
+        with col_bid:
+            if ad_type == "플레이스광고":
+                avg_bid = st.session_state.get(avg_key, 0)
+                diff = bid_amt - avg_bid
+                diff_color = "#E03131" if diff < 0 else "#16181D"
+                diff_html = f'<span style="color:{diff_color};">{diff:,}원</span>'
+                rows = [("현재 입찰가", f"{bid_amt:,}원", diff_html)]
+                if not is_admin:
+                    rows.append(("평균 입찰가", f"{avg_bid:,}원", None))
+                st.markdown(_build_table(rows), unsafe_allow_html=True)
+                if is_admin:
+                    st.number_input(
+                        "평균 입찰가", min_value=0, step=10, key=avg_key, on_change=_save_admin_note,
+                    )
+            else:
+                daily_budget = adgroup.get("dailyBudget", 0)
+                rows = [("현재 입찰가", f"{bid_amt:,}원", None), ("하루 예산", f"{daily_budget:,}원", None)]
+                st.markdown(_build_table(rows), unsafe_allow_html=True)
+        with col_note:
+            if is_admin:
+                st.text_input(
+                    "특이사항", key=note_key, placeholder="* 특이사항 - 이번 주 특이사항을 입력하세요",
+                    label_visibility="collapsed", on_change=_save_admin_note,
+                )
+            else:
+                note_text = st.session_state.get(note_key, "").strip()
+                st.markdown(
+                    f'<div style="font-size:13px; color:#16181D; padding-top:8px;">'
+                    f'<b>* 특이사항</b> - {note_text or "없음"}</div>',
+                    unsafe_allow_html=True,
+                )
+
+
 # cv_kwsave_result 플래그는 Top10 키워드 저장·소재 캡처 업로드(플레이스/파워링크/
 # 파워컨텐츠 각 섹션, 추가 광고그룹까지) 여러 지점에서 공유해서 쓴다. 예전엔 각
 # 저장 지점 바로 아래에서 "플래그가 True면 다이얼로그 열기"를 각자 체크했는데,
@@ -439,12 +582,16 @@ def get_screenshot_url(storage_path, uploaded_at=None):
     return url
 
 
-def render_creative_screenshot_slot(adgroup_id):
+def render_creative_screenshot_slot(adgroup_id, max_height=340):
     """일별 유입 현황 표는 그대로 두고, 그 아래 차트 자리(세 유형 모두)를 실제
     노출 화면 캡처로 대체한다(2026-07-31 실물 리포트 비교로 확인한 자리, 2026-08-04
     플레이스도 통일) — API로 가져온 소재는 실제 노출 화면(사진/평점/태그 등 플레이스
     프로필 데이터)과 시각적 차이가 커서 재현을 포기하고, 담당자가 직접 캡처해
-    올리는 방식으로 대체했다."""
+    올리는 방식으로 대체했다.
+    max_height: "기본"/"회의" 두 모드가 조회·업로드 로직은 완전히 동일해서(같은
+    데이터를 보여줌) 함수 자체는 공유하고, 세로 높이 상한만 모드별로 다르게 준다
+    (기본 280px 원본 그대로 / 회의 340px, 2026-08-11 이미지가 너무 작다는 피드백으로
+    키움)."""
     st.markdown("**광고 소재**")
     row = fetch_creative_screenshot(adgroup_id)
     if row:
@@ -456,7 +603,7 @@ def render_creative_screenshot_slot(adgroup_id):
         # st.image는 높이 상한을 못 걸어서 raw <img>로 직접 그린다.
         img_url = get_screenshot_url(row["storage_path"], row.get("uploaded_at"))
         st.markdown(
-            f'<img src="{img_url}" style="max-width:100%; max-height:340px; '
+            f'<img src="{img_url}" style="max-width:100%; max-height:{max_height}px; '
             f'width:auto; height:auto; display:block;">',
             unsafe_allow_html=True,
         )
@@ -594,6 +741,61 @@ def render_report_body(title, ad_type, adgroup, last_week_start, last_week_end):
         render_creative_screenshot_slot(adgroup_id)
 
 
+def render_report_body_legacy(ad_type, adgroup, last_week_start, last_week_end):
+    """render_report_body의 2026-08-11 가독성 개선 이전 원본 — "기본" 모드에서 그대로
+    쓴다. 일별 유입 현황이 팝업이 아니라 표로 바로 인라인 노출되고, 3칸도
+    일별/주간/키워드 순서(광고 소재는 일별 칸 아래에 붙음)로 원본 그대로다."""
+    render_bid_info_legacy(ad_type, adgroup, last_week_start)
+
+    adgroup_id = adgroup["nccAdgroupId"]
+    four_weeks_start = last_week_start - datetime.timedelta(weeks=3)  # 선택한 주 포함 4주 전 월요일
+
+    daily_recent, err = fetch_daily_stats(adgroup_id, last_week_start, last_week_end)
+    if err:
+        st.error(f"❌ 일별 유입 현황을 가져오는 중 오류가 발생했습니다: {err}")
+        return
+    daily_month, err = fetch_daily_stats(adgroup_id, four_weeks_start, last_week_end)
+    if err:
+        st.error(f"❌ 주간 유입 현황을 가져오는 중 오류가 발생했습니다: {err}")
+        return
+    top_keywords, err = fetch_top_keywords(adgroup_id, last_week_start)
+    if err:
+        st.error(f"❌ 상위 클릭 키워드를 가져오는 중 오류가 발생했습니다: {err}")
+        return
+
+    col_daily, col_weekly, col_keywords = st.columns(3)
+
+    with col_daily:
+        st.markdown("**일별 유입 현황**")
+        if daily_recent is not None and not daily_recent.empty:
+            display_df = with_ctr_cpc(daily_recent).copy()
+            display_df["날짜"] = display_df["날짜"].apply(lambda d: d.strftime("%m/%d"))
+            display_df = display_df[["날짜", "노출수", "클릭수", "클릭률(%)", "평균 CPC", "총비용"]]
+            render_html_table_legacy(display_df)
+        else:
+            st.info("데이터가 없습니다.")
+
+        render_creative_screenshot_slot(adgroup_id, max_height=280)
+
+    with col_weekly:
+        st.markdown("**주간 유입 현황**")
+        weekly_df = build_weekly_table(daily_month) if daily_month is not None else None
+        if weekly_df is not None and not weekly_df.empty:
+            render_html_table_legacy(weekly_df.drop(columns=["주차"]))
+            render_dual_axis_chart_legacy(weekly_df, "주차")
+        else:
+            st.info("데이터가 없습니다.")
+
+    with col_keywords:
+        st.markdown("**상위 클릭 10개 키워드**")
+        if ad_type == "플레이스광고" and st.session_state.get("is_admin"):
+            render_place_keyword_editor(adgroup_id, last_week_start, top_keywords)
+        elif top_keywords is not None and not top_keywords.empty:
+            render_html_table_legacy(top_keywords)
+        else:
+            st.info("데이터가 없습니다.")
+
+
 def render_ad_type_report(store_name, ad_type, label, section_key, last_week_start, last_week_end):
     """플레이스/파워링크/파워컨텐츠 3개 구간 중 하나를 그린다. 대표 광고그룹 외에
     같은 캠페인에 더 있는 추가(대관 등) 광고그룹은 여기서 안 그리고 그대로 돌려줘서,
@@ -611,6 +813,24 @@ def render_ad_type_report(store_name, ad_type, label, section_key, last_week_sta
             st.error(f"❌ {label} 데이터를 가져오는 중 오류가 발생했습니다: {err}")
             return []
         render_report_body(label, ad_type, adgroup, last_week_start, last_week_end)
+    return [(ad_type, ag) for ag in extra_adgroups]
+
+
+def render_ad_type_report_legacy(store_name, ad_type, label, section_key, last_week_start, last_week_end):
+    """render_ad_type_report의 2026-08-11 가독성 개선 이전 원본 — "기본" 모드에서
+    그대로 쓴다. 제목이 render_report_body_legacy 안이 아니라 여기서 그려진다(원본
+    구조 그대로 — 새 모드처럼 제목 옆에 작은 버튼을 붙이지 않으므로 본문 함수에
+    옮길 필요가 없다)."""
+    adgroup, extra_adgroups, err = fetch_first_adgroup(store_name, ad_type)
+    if not err and not adgroup:
+        return []
+
+    with st.container(border=True, key=section_key):
+        st.markdown(f"### {label}")
+        if err:
+            st.error(f"❌ {label} 데이터를 가져오는 중 오류가 발생했습니다: {err}")
+            return []
+        render_report_body_legacy(ad_type, adgroup, last_week_start, last_week_end)
     return [(ad_type, ag) for ag in extra_adgroups]
 
 
@@ -702,10 +922,15 @@ else:
         week_options.append(st.session_state["cv_week_monday"])
         week_options.sort()
 
+    if "cv_view_mode" not in st.session_state:
+        st.session_state["cv_view_mode"] = "기본"
+
     with st.container(key="cv_nav_row"):
-        col_acc_prev, col_acc_select, col_acc_next, col_week_prev, col_week_select, col_week_next = st.columns(
-            [0.5, 2.5, 0.5, 0.5, 1.8, 0.5]
-        )
+        (
+            col_acc_prev, col_acc_select, col_acc_next,
+            col_week_prev, col_week_select, col_week_next,
+            col_view_mode,
+        ) = st.columns([0.5, 2.5, 0.5, 0.5, 1.8, 0.5, 2.2])
         with col_acc_prev:
             st.button("◀", key="cv_account_prev", on_click=_shift_account, args=(-1,), width="stretch")
         with col_acc_select:
@@ -726,25 +951,34 @@ else:
                 "▶", key="cv_week_next", on_click=_shift_week, args=(1,), width="stretch",
                 disabled=(st.session_state["cv_week_monday"] >= last_completed_monday),
             )
+        with col_view_mode:
+            # "기본"(원래 레이아웃, 컴팩트) / "회의"(2026-08-11 가독성 개선 — 빔프로젝터로
+            # 볼 때 쓰는 큰 글자·팝업 레이아웃) 전환 토글. N월 N주차 선택 영역 바로
+            # 오른쪽에 둔다(2026-08-11, 사용자 요청).
+            st.segmented_control(
+                "보기 모드", options=["기본", "회의"], key="cv_view_mode", label_visibility="collapsed",
+            )
 
     week_monday = st.session_state["cv_week_monday"]
     week_sunday = week_monday + datetime.timedelta(days=6)
 
     selected_account = st.session_state["cv_account_select"]
+    is_meeting_mode = st.session_state["cv_view_mode"] == "회의"
+    _render_ad_type = render_ad_type_report if is_meeting_mode else render_ad_type_report_legacy
 
     extra_adgroups = []
 
-    extra_adgroups += render_ad_type_report(
+    extra_adgroups += _render_ad_type(
         selected_account, "플레이스광고", f"{selected_account} 플레이스 광고",
         "section_report_place", week_monday, week_sunday,
     ) or []
 
-    extra_adgroups += render_ad_type_report(
+    extra_adgroups += _render_ad_type(
         selected_account, "파워링크광고", f"{selected_account} 파워링크 광고",
         "section_report_weblink", week_monday, week_sunday,
     ) or []
 
-    extra_adgroups += render_ad_type_report(
+    extra_adgroups += _render_ad_type(
         selected_account, "파워컨텐츠광고", f"{selected_account} 파워컨텐츠 광고",
         "section_report_contents", week_monday, week_sunday,
     ) or []
@@ -754,7 +988,11 @@ else:
     # 맨 아래에 실제 광고그룹 이름 그대로 따로 몰아서 보여준다.
     for ad_type, ag in extra_adgroups:
         with st.container(border=True, key=f"section_report_extra_{ag['nccAdgroupId']}"):
-            render_report_body(ag.get("name") or "추가 광고그룹", ad_type, ag, week_monday, week_sunday)
+            if is_meeting_mode:
+                render_report_body(ag.get("name") or "추가 광고그룹", ad_type, ag, week_monday, week_sunday)
+            else:
+                st.markdown(f"### {ag.get('name') or '추가 광고그룹'}")
+                render_report_body_legacy(ad_type, ag, week_monday, week_sunday)
 
     # 모든 섹션을 다 그린 뒤 딱 한 곳에서만 체크 — 이유는 _kwsave_result_dialog
     # 정의부 주석 참고.
