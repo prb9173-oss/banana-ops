@@ -698,7 +698,6 @@ pages = [
     st.Page("nav_pages/season_keywords.py", title="시즌 키워드 관리", icon=":material/eco:"),
     st.Page("nav_pages/creative_viz.py", title="주간 광고 데이터", icon=":material/dashboard:"),
     st.Page("nav_pages/place_rank.py", title="플레이스 순위 추적", icon=":material/location_on:"),
-    st.Page("nav_pages/meeting_docs.py", title="회의 자료 수집", icon=":material/folder_shared:"),
 ]
 
 pg = st.navigation(pages)
