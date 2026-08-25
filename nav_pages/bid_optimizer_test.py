@@ -427,7 +427,7 @@ else:
     actionable.sort(key=lambda r: r["_순서"])
 
     with st.container(border=True, key="section_bid_judgment"):
-        st.markdown("#### 매장별 판정")
+        st.markdown("#### 입찰가 진단")
         st.caption(
             "현재입찰가 vs 평균입찰가(시세) + 예산 소진/클릭 추세를 같이 봐서 인하 여지를 판단합니다. "
             "근거에 붙는 '이상노출 N주 제외'는 클릭 수는 그대로인데 노출만 비정상적으로 튄(경쟁사 "
@@ -449,7 +449,7 @@ else:
     # ==========================================
     if actionable and st.session_state.get("is_admin"):
         with st.container(border=True, key="section_bid_actionable"):
-            st.markdown("#### 조정 후보 매장 — 개별 적용")
+            st.markdown("#### 입찰가 조정")
             st.caption(
                 "매장별로 확인 후 적용하세요. 한 번에 여러 매장을 일괄 적용하는 기능은 없습니다. "
                 "입찰가 칸은 추천값이 기본으로 들어있고, 직접 다른 값으로 고쳐서 적용할 수도 있습니다."
