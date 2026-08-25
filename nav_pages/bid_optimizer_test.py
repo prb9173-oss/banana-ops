@@ -286,7 +286,11 @@ def render_results_table(rows):
     """다른 페이지들처럼(place_rank.py 등) 배지+표 톤으로 통일 — st.dataframe(기본
     스프레드시트 느낌)은 판정을 색으로 구분할 수 없어서, 이 페이지만 HTML 표로
     직접 그린다(2026-08-25, 디자인이 조잡해 보인다는 피드백)."""
-    cols = ["매장", "판정", "근거", "현재입찰가", "평균입찰가", "추천입찰가", "차이", "예산소진"]
+    # 매장명 → 현재입찰가 → 평균입찰가 → 차이 → 예산소진 → 비고(구 "근거") → 판정
+    # 순서로 바꿔달라는 요청(2026-08-25) — 판정(배지)을 맨 뒤로 보내고 숫자 비교값을
+    # 앞에 몰아서 한눈에 비교하기 쉽게. 추천입찰가는 아래 "조정 후보 매장" 카드에서
+    # 직접 고쳐 넣을 수 있어서 이 표에서는 뺐다.
+    cols = ["매장", "현재입찰가", "평균입찰가", "차이", "예산소진", "비고", "판정"]
     html = (
         '<table style="width:100%; border-collapse:collapse; text-align:center; '
         f'color:#16181D; border:1px solid {TABLE_BORDER};">'
@@ -301,13 +305,13 @@ def render_results_table(rows):
             f'<td style="padding:9px 8px; border:1px solid {TABLE_BORDER}; font-size:14px; '
             f'font-weight:600; text-align:left;">{r["매장"]}</td>'
         )
-        html += f'<td style="padding:9px 8px; border:1px solid {TABLE_BORDER}; white-space:nowrap;">{render_verdict_badge(r["판정"])}</td>'
+        for col in ["현재입찰가", "평균입찰가", "차이", "예산소진"]:
+            html += f'<td style="padding:9px 8px; border:1px solid {TABLE_BORDER}; font-size:14px; white-space:nowrap;">{r[col]}</td>'
         html += (
             f'<td style="padding:9px 8px; border:1px solid {TABLE_BORDER}; font-size:12.5px; '
-            f'color:#5B6472; text-align:left;">{r["근거"]}</td>'
+            f'color:#5B6472; text-align:left;">{r["비고"]}</td>'
         )
-        for col in ["현재입찰가", "평균입찰가", "추천입찰가", "차이", "예산소진"]:
-            html += f'<td style="padding:9px 8px; border:1px solid {TABLE_BORDER}; font-size:14px; white-space:nowrap;">{r[col]}</td>'
+        html += f'<td style="padding:9px 8px; border:1px solid {TABLE_BORDER}; white-space:nowrap;">{render_verdict_badge(r["판정"])}</td>'
         html += '</tr>'
     html += '</tbody></table>'
     return html
@@ -399,7 +403,7 @@ else:
         rows.append({
             "매장": ag["account_key"],
             "판정": result["verdict"],
-            "근거": result["reason"],
+            "비고": result["reason"],
             "현재입찰가": f"{bid_amt:,}원",
             "평균입찰가": f"{avg_bid:,}원" if avg_bid else "-",
             "추천입찰가": f"{result['suggested_bid']:,}원" if result["suggested_bid"] else "-",
@@ -414,6 +418,7 @@ else:
                 "week_monday": ag["week_monday"],
                 "verdict": result["verdict"],
                 "bid_amt": bid_amt,
+                "avg_bid": avg_bid,
                 "suggested_bid": result["suggested_bid"],
                 "_순서": store_order_map.get(ag["account_key"], 999),
             })
@@ -483,7 +488,8 @@ else:
                     with col_store:
                         st.markdown(f"**{item['store_name']}**")
                         st.markdown(
-                            f'<span class="bid-change-text">현재 {item["bid_amt"]:,}원</span>',
+                            f'<span class="bid-change-text">현재 {item["bid_amt"]:,}원 · '
+                            f'평균 {item["avg_bid"]:,}원</span>',
                             unsafe_allow_html=True,
                         )
                     with col_input:
