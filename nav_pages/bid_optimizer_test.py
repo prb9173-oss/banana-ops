@@ -93,7 +93,37 @@ def update_adgroup_bid_live(customer_id, api_key, secret_key, adgroup_id, new_bi
     return r.json()
 
 
-def apply_bid_change(store_name, adgroup_id, new_bid_amt, week_monday):
+def append_bid_change_note(adgroup_id, week_monday, avg_bid_amt, old_bid_amt, new_bid_amt):
+    """입찰가를 실제로 바꾸면 그 주 "특이사항"(creative_admin_notes.note, "주간 광고
+    데이터" 페이지에 그대로 보임)에 변경 기록을 한 줄 남긴다. 별도 이력 테이블을 두면
+    계속 쌓이기만 해서 관리 부담이 된다는 지적(2026-08-26)이 있었고, 이미 있는 주간
+    메모 칸이 매주 자연스럽게 새로 시작되니 그대로 재사용하는 게 낫다고 판단했다.
+    관리자가 이미 적어둔 메모가 있으면 절대 안 지우고 뒤에 이어붙인다."""
+    client = get_supabase_client()
+    res = (
+        client.table("creative_admin_notes")
+        .select("note")
+        .eq("adgroup_id", adgroup_id)
+        .eq("week_monday", week_monday)
+        .limit(1)
+        .execute()
+    )
+    rows = res.data or []
+    existing_note = (rows[0].get("note") or "") if rows else ""
+
+    today = datetime.datetime.now(KST).date()
+    change_line = f"{today.month}/{today.day} 입찰가 {old_bid_amt:,}원 → {new_bid_amt:,}원"
+    new_note = f"{existing_note} / {change_line}" if existing_note else change_line
+
+    client.table("creative_admin_notes").upsert({
+        "adgroup_id": adgroup_id,
+        "week_monday": week_monday,
+        "avg_bid_amt": int(avg_bid_amt),
+        "note": new_note,
+    }, on_conflict="adgroup_id,week_monday").execute()
+
+
+def apply_bid_change(store_name, adgroup_id, new_bid_amt, week_monday, old_bid_amt, avg_bid_amt):
     """추천 입찰가를 실제 네이버 계정에 반영하고, 성공하면 creative_adgroup_snapshot의
     해당 광고그룹 최신 주차 bid_amt도 같이 갱신한다 — "주간 광고 데이터" 페이지가
     다음 주 월요일 자동 수집을 기다리지 않고 바로 새 입찰가를 보여주도록. 과거 주차
@@ -123,6 +153,13 @@ def apply_bid_change(store_name, adgroup_id, new_bid_amt, week_monday):
         # 네이버 반영은 이미 성공했으니 실패로 보고하면 안 되고, DB만 안 맞을 수
         # 있다는 걸 알려준다 — 다음 주 크론이 돌면 어차피 다시 맞춰진다.
         return True, f"⚠️ 네이버에는 반영됐지만 화면 갱신 중 오류: {e}"
+
+    try:
+        append_bid_change_note(adgroup_id, week_monday, avg_bid_amt, old_bid_amt, new_bid_amt)
+    except Exception:
+        # 특이사항 기록은 부가 기능 — 실패해도 입찰가 자체는 이미 정상 반영됐으니
+        # 사용자에게는 성공으로 보고한다.
+        pass
 
     fetch_place_main_adgroups.clear()
     return True, None
@@ -406,7 +443,6 @@ else:
             "비고": result["reason"],
             "현재입찰가": f"{bid_amt:,}원",
             "평균입찰가": f"{avg_bid:,}원" if avg_bid else "-",
-            "추천입찰가": f"{result['suggested_bid']:,}원" if result["suggested_bid"] else "-",
             "차이": f"{bid_amt - avg_bid:+,}원" if avg_bid else "-",
             "예산소진": f"{result['exhausted_days']}/{result['total_days']}일",
             "_순서": store_order_map.get(ag["account_key"], 999),
@@ -425,6 +461,7 @@ else:
 
     rows.sort(key=lambda r: r["_순서"])
     actionable.sort(key=lambda r: r["_순서"])
+
 
     with st.container(border=True, key="section_bid_judgment"):
         st.markdown("#### 입찰가 진단")
@@ -467,6 +504,7 @@ else:
                     if st.button("예", key="confirm_yes", width="stretch"):
                         ok, err = apply_bid_change(
                             item["store_name"], item["adgroup_id"], item["suggested_bid"], item["week_monday"],
+                            item["bid_amt"], item["avg_bid"],
                         )
                         st.session_state["bid_apply_result"] = (
                             f"✅ {item['store_name']} 입찰가를 {item['suggested_bid']:,}원으로 변경했습니다."
@@ -494,10 +532,16 @@ else:
                         )
                     with col_input:
                         # 추천 입찰가를 기본값으로 채워두되, 직접 원하는 값으로 고쳐서
-                        # 적용할 수 있게 해달라는 요청(2026-08-25).
+                        # 적용할 수 있게 해달라는 요청(2026-08-25). key에 suggested_bid를
+                        # 같이 넣어둔다 — key만 고정이면 st.number_input의 value=는 최초
+                        # 렌더링 이후로는 무시되고 session_state 값을 그대로 쓰기 때문에,
+                        # 세션 중간에 평균입찰가가 바뀌어 추천값이 재계산돼도 입력칸은
+                        # 예전 추천값에 멈춰 있는 버그가 있었다(2026-08-25 재검토로 발견).
+                        # 추천값이 바뀌면 key도 바뀌어 새 기본값으로 다시 렌더링된다.
                         target_bid = st.number_input(
                             "적용할 입찰가", min_value=50, step=BID_ROUND_TO,
-                            value=item["suggested_bid"], key=f"bid_input_{item['adgroup_id']}",
+                            value=item["suggested_bid"],
+                            key=f"bid_input_{item['adgroup_id']}_{item['suggested_bid']}",
                             label_visibility="collapsed",
                         )
                     with col_verdict:
