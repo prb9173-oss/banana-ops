@@ -4,7 +4,7 @@ import streamlit.components.v1 as components
 # ==========================================
 # [내비게이션 셸] 사이드바 기능별 메뉴 + 카드형 콘텐츠 레이아웃
 # ==========================================
-st.set_page_config(page_title="BananaWorks", layout="wide", page_icon="🍌")
+st.set_page_config(page_title="Banana-ops", layout="wide", page_icon="🍌")
 
 PRIMARY = "#3182F6"
 PRIMARY_HOVER = "#1B64DA"
@@ -783,16 +783,138 @@ st.markdown(f"""
         right: 0;
         padding: 0 20px;
     }}
+
+    /* 입찰가 테스트 페이지 — 판정 배지. 기존 pill-rank / pill-kw 색 언어를 그대로
+       재사용해서(초록=긍정 신호, 회색=중립, 호박색=주의) 새 색을 만들지 않는다. */
+    /* 판정 배지 글자가 기본 .status-pill(11.5px, 다른 페이지 배지들과 공유하는
+       값이라 거기서 못 바꿈)로는 너무 작다는 피드백(2026-08-25) — 이 페이지
+       배지만 두 클래스를 같이 건 선택자로 크기를 키운다. */
+    .status-pill.pill-bid-strong {{ background:#DCFCE7 !important; color:#166534 !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
+    .status-pill.pill-bid-mild {{ background:#EEF3FA !important; color:{PRIMARY_HOVER} !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
+    .status-pill.pill-bid-hold {{ background:#FEF3C7 !important; color:#92400E !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
+    .status-pill.pill-bid-neutral {{ background:#F1F5F9 !important; color:#64748B !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
+    .status-pill.pill-bid-review {{ background:#FFEDD5 !important; color:#9A3412 !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
+    .status-pill.pill-bid-nodata {{ background:#F8FAFC !important; color:#94A3B8 !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
+
+    /* 조정 후보 매장 카드 행 — pr_kwrow_와 같은 패턴(구분선만, 개별 박스 없음),
+       이미 section_bid_actionable 카드 안에 있어서 박스 안에 박스를 또 만들지 않는다. */
+    div[class*="st-key-bid_card_"] {{
+        padding: 8px 2px !important;
+        border-bottom: 1px solid #EEF0F3;
+    }}
+    div[class*="st-key-bid_card_"]:last-of-type {{
+        border-bottom: none;
+    }}
+    .bid-change-text {{ font-size: 14px; color: #5B6472; }}
+    .bid-change-arrow {{ color: #94A3B8; margin: 0 4px; }}
+    .bid-change-new {{ font-weight: 700; color: #16181D; font-size: 15px; }}
+
+    /* 사이드바 "광고" 그룹 — st.expander 기본 스타일은 카드처럼 테두리+둥근
+    모서리가 있는 박스라 다른 내비 링크들과 안 어울린다는 피드백(2026-08-25).
+    박스만 지우고 접기/펼치기 기능은 그대로 둔다. */
+    div[class*="st-key-nav_ad_expander"] details {{
+        border: none !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+    }}
+    div[class*="st-key-nav_ad_expander"] summary {{
+        padding: 4px 8px !important;
+        min-height: unset !important;
+        background: transparent !important;
+    }}
+    div[class*="st-key-nav_ad_expander"] div[data-testid="stExpanderDetails"] {{
+        /* 위쪽 패딩 = 펼쳤을 때 "광고 관리" 헤더와 하위 탭 사이 공백(2026-08-25 요청).
+        border-top는 원래 카드 헤더/본문을 나누는 구분선인데, 카드 박스를 없앤
+        마당에 이 선만 남으면 어색한 밑줄로 보여서(2026-08-25 피드백) 같이 지운다. */
+        padding: 8px 0 0 8px !important;
+        border-top: none !important;
+    }}
+    /* 최상단 탭("광고 관리" 헤더, 그룹 밖의 "플레이스 순위 추적")은 16px로 크게,
+    펼쳤을 때 나오는 하위 탭 3개는 14px로 작게 — 위계가 보이게(2026-08-25 요청).
+    하위 탭 규칙(stExpanderDetails 안)이 더 구체적이라 상위 규칙을 덮어쓴다. */
+    [data-testid="stSidebar"] div[data-testid="stPageLink"] * {{
+        font-size: 16px !important;
+    }}
+    [data-testid="stSidebar"] div[data-testid="stExpanderDetails"] div[data-testid="stPageLink"] * {{
+        font-size: 14px !important;
+    }}
+    div[class*="st-key-nav_ad_expander"] summary,
+    div[class*="st-key-nav_ad_expander"] summary * {{
+        font-size: 16px !important;
+    }}
+    /* "광고 관리" 헤더는 클릭/포커스해도 색이 안 바뀌고 밑줄도 안 생기게 —
+    펼치고 나면 파란 밑줄이 남는다는 피드백(2026-08-25). summary는 원래
+    disclosure 위젯이라 브라우저 기본 포커스 링/밑줄이 남을 수 있다. */
+    div[class*="st-key-nav_ad_expander"] summary,
+    div[class*="st-key-nav_ad_expander"] summary:hover,
+    div[class*="st-key-nav_ad_expander"] summary:focus,
+    div[class*="st-key-nav_ad_expander"] summary:focus-visible,
+    div[class*="st-key-nav_ad_expander"] summary *,
+    div[class*="st-key-nav_ad_expander"] summary:hover *,
+    div[class*="st-key-nav_ad_expander"] summary:focus * {{
+        color: #16181D !important;
+        text-decoration: none !important;
+        outline: none !important;
+        border-bottom: none !important;
+    }}
+    /* 현재 페이지 링크 — st.page_link 기본 활성 표시(옅은 회색 배경만)가 원래
+    내비게이션의 파란 강조 텍스트보다 티가 안 나서(2026-08-25 피드백), _nav_link()가
+    활성 링크에 붙이는 "_current" 키로 배경+글자색을 직접 입힌다. */
+    div[class*="st-key-nav_link_ad_"][class*="_current"] a[data-testid="stPageLink-NavLink"],
+    div[class*="st-key-nav_link_other_"][class*="_current"] a[data-testid="stPageLink-NavLink"] {{
+        background-color: #EEF3FA !important;
+        border-radius: 8px !important;
+    }}
+    div[class*="st-key-nav_link_ad_"][class*="_current"] a[data-testid="stPageLink-NavLink"] *,
+    div[class*="st-key-nav_link_other_"][class*="_current"] a[data-testid="stPageLink-NavLink"] * {{
+        color: {PRIMARY} !important;
+        font-weight: 600 !important;
+    }}
     </style>
 """, unsafe_allow_html=True)
 
-pages = [
-    st.Page("nav_pages/season_keywords.py", title="시즌 키워드 관리", icon=":material/eco:"),
-    st.Page("nav_pages/creative_viz.py", title="주간 광고 데이터", icon=":material/dashboard:", default=True),
+# 시즌 키워드 관리 / 주간 광고 데이터 / 입찰가 조정은 다 광고 운영 기능이라, "광고"를
+# 클릭하면 하위 3개가 펼쳐지는 접이식 그룹으로 묶어달라는 요청(2026-08-25). st.navigation
+# 자체 사이드바 UI는 딕셔너리를 줘도 항상 펼쳐진 정적 섹션 헤더만 지원하고 클릭-펼침은
+# 안 되길래, st.navigation은 position="hidden"으로 라우팅만 맡기고 사이드바는
+# st.expander + st.page_link로 직접 그린다.
+# 하위 탭은 아이콘 없이 "-"만 붙여달라는 요청(2026-08-25)이라 아이콘을 아예 안 준다
+# — st.page_link에 label을 줘도 icon은 페이지 자체의 icon을 그대로 물려받아서,
+# 여기서 안 없애면 label의 "-"와 아이콘이 같이 뜬다.
+AD_PAGES = [
+    st.Page("nav_pages/creative_viz.py", title="주간 광고 데이터", default=True),
+    st.Page("nav_pages/season_keywords.py", title="시즌 키워드 관리"),
+    # 입찰가 판정 로직 프로토타입 — 검증용, "주간 광고 데이터"와 합치지 말고 별도
+    # 탭으로 유지해달라는 요청(2026-08-25).
+    st.Page("nav_pages/bid_optimizer_test.py", title="입찰가 조정"),
+]
+OTHER_PAGES = [
     st.Page("nav_pages/place_rank.py", title="플레이스 순위 추적", icon=":material/location_on:"),
 ]
 
-pg = st.navigation(pages)
+pg = st.navigation(AD_PAGES + OTHER_PAGES, position="hidden")
+
+def _nav_link(p, key_prefix, label=None):
+    # st.page_link 자체의 "현재 페이지" 표시가 옅은 회색 배경 하나뿐이라 원래
+    # st.navigation 기본 내비게이션(파란 강조색 텍스트)보다 안 도드라진다는
+    # 피드백(2026-08-25) — pg를 이미 알고 있으니 활성 여부를 직접 판단해서,
+    # 활성 링크만 별도 key로 감싸 브랜드 파란색을 명시적으로 입힌다.
+    is_current = p == pg
+    with st.container(key=f"{key_prefix}_current" if is_current else key_prefix):
+        st.page_link(p, label=label)
+
+
+with st.sidebar:
+    # 지금 보고 있는 페이지가 "광고" 그룹 안에 있으면 펼친 채로 시작 — 매번 접혀
+    # 있으면 방금 클릭한 페이지가 어디 속해 있었는지 안 보여서 헷갈린다.
+    with st.expander("광고 관리", expanded=(pg in AD_PAGES), key="nav_ad_expander"):
+        # 하위 탭은 아이콘 대신 "-"로 통일해달라는 요청(2026-08-25) — st.Page 자체의
+        # title/icon(탭 제목, 페이지 헤더에도 쓰임)은 그대로 두고, 사이드바 라벨만
+        # page_link의 label로 덮어쓴다.
+        for i, p in enumerate(AD_PAGES):
+            _nav_link(p, f"nav_link_ad_{i}", label=f"- {p.title}")
+    for i, p in enumerate(OTHER_PAGES):
+        _nav_link(p, f"nav_link_other_{i}")
 
 # ==========================================
 # [관리자 모드] 조회는 누구나, 실제 데이터를 바꾸는 버튼/폼만 각 페이지에서
