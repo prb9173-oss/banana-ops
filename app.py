@@ -870,6 +870,12 @@ st.markdown(f"""
         color: {PRIMARY} !important;
         font-weight: 600 !important;
     }}
+    /* "지난주 불러오기" 아이콘 버튼(↩) — width="content"만 쓰면 기본 여백이 남아
+    가로로 길어 보인다는 피드백(2026-08-27) — 좌우 8px로 좁힌다. */
+    div[class*="st-key-cv_copy_lastweek_"] button {{
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }}
     </style>
 """, unsafe_allow_html=True)
 

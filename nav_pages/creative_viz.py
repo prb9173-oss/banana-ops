@@ -373,6 +373,19 @@ def render_bid_info(ad_type, adgroup, week_monday):
     def _save_admin_note():
         upsert_admin_note(adgroup_id, week_monday, st.session_state[avg_key], st.session_state[note_key])
 
+    def _copy_last_week_note():
+        # 지난주 특이사항을 이번 주 칸 뒤에 이어붙인다(2026-08-27 요청) — 기존에
+        # 이번 주에 이미 적어둔 내용은 절대 안 지운다. on_click 콜백이라 위젯이
+        # 다시 그려지기 전에 session_state를 바꿀 수 있다.
+        _, last_note = fetch_admin_note(adgroup_id, week_monday - datetime.timedelta(days=7))
+        last_note = (last_note or "").strip()
+        if not last_note:
+            st.toast("지난주 특이사항이 비어있습니다.")
+            return
+        current = (st.session_state.get(note_key, "") or "").strip()
+        st.session_state[note_key] = f"{current} / {last_note}" if current else last_note
+        _save_admin_note()
+
     def _build_table(rows):
         html = f'<table style="border-collapse:collapse; border:1px solid {TABLE_BORDER};">'
         for name, val, extra in rows:
@@ -397,7 +410,7 @@ def render_bid_info(ad_type, adgroup, week_monday):
         return html
 
     with st.container(key=f"cv_bid_row_{adgroup_id}"):
-        col_bid, col_note = st.columns([1, 2])
+        col_bid, col_note, col_copy = st.columns([0.85, 2, 0.22])
         with col_bid:
             if ad_type == "플레이스광고":
                 avg_bid = st.session_state.get(avg_key, 0)
@@ -437,6 +450,12 @@ def render_bid_info(ad_type, adgroup, week_monday):
                     f'<b>* 특이사항</b> - {note_text or "없음"}</div>',
                     unsafe_allow_html=True,
                 )
+        with col_copy:
+            if is_admin:
+                st.button(
+                    "↩", key=f"cv_copy_lastweek_{adgroup_id}_{week_monday.isoformat()}",
+                    on_click=_copy_last_week_note, width="content", help="지난주 특이사항 불러오기",
+                )
 
 
 def render_bid_info_legacy(ad_type, adgroup, week_monday):
@@ -463,6 +482,18 @@ def render_bid_info_legacy(ad_type, adgroup, week_monday):
     def _save_admin_note():
         upsert_admin_note(adgroup_id, week_monday, st.session_state[avg_key], st.session_state[note_key])
 
+    def _copy_last_week_note():
+        # 지난주 특이사항을 이번 주 칸 뒤에 이어붙인다(2026-08-27 요청) — 기존에
+        # 이번 주에 이미 적어둔 내용은 절대 안 지운다.
+        _, last_note = fetch_admin_note(adgroup_id, week_monday - datetime.timedelta(days=7))
+        last_note = (last_note or "").strip()
+        if not last_note:
+            st.toast("지난주 특이사항이 비어있습니다.")
+            return
+        current = (st.session_state.get(note_key, "") or "").strip()
+        st.session_state[note_key] = f"{current} / {last_note}" if current else last_note
+        _save_admin_note()
+
     def _build_table(rows):
         html = f'<table style="border-collapse:collapse; border:1px solid {TABLE_BORDER};">'
         for name, val, extra in rows:
@@ -487,7 +518,7 @@ def render_bid_info_legacy(ad_type, adgroup, week_monday):
         return html
 
     with st.container(key=f"cv_bidinfo_legacy_{adgroup_id}"):
-        col_bid, col_note = st.columns([1, 2])
+        col_bid, col_note, col_copy = st.columns([0.85, 2, 0.22])
         with col_bid:
             if ad_type == "플레이스광고":
                 avg_bid = st.session_state.get(avg_key, 0)
@@ -521,6 +552,12 @@ def render_bid_info_legacy(ad_type, adgroup, week_monday):
                     f'<div style="font-size:13px; color:#16181D; padding-top:8px;">'
                     f'<b>* 특이사항</b> - {note_text or "없음"}</div>',
                     unsafe_allow_html=True,
+                )
+        with col_copy:
+            if is_admin:
+                st.button(
+                    "↩", key=f"cv_copy_lastweek_legacy_{adgroup_id}_{week_monday.isoformat()}",
+                    on_click=_copy_last_week_note, width="content", help="지난주 특이사항 불러오기",
                 )
 
 
