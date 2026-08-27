@@ -407,8 +407,9 @@ def judge(adgroup_id, bid_amt, daily_budget, avg_bid, today):
         tags.append("클릭 하락")
     else:
         tags.append("클릭 안정")
-    if trend["anomaly_weeks"] > 0:
-        tags.append(f"이상노출 {trend['anomaly_weeks']}주 제외")
+    # 이상노출 제외 자체(클릭 추세 계산에서 뻥튀기된 주 빼는 로직)는 그대로 두되,
+    # "이상노출 N주 제외" 태그는 비고에 더 안 보여준다(2026-08-27 요청) — 내부
+    # 판단 근거일 뿐 사용자에게 굳이 노출할 필요는 없다고 판단.
 
     suggested_bid = None
     if budget_exhausted and ratio > BID_RATIO_LOW:
@@ -433,7 +434,7 @@ def judge(adgroup_id, bid_amt, daily_budget, avg_bid, today):
     }
 
 
-st.subheader("입찰가 조정")
+st.subheader("입찰가 조정 (플레이스광고)")
 
 if not st.session_state.get("is_admin"):
     st.info("🔒 입찰가 실제 반영은 관리자 모드에서만 가능합니다. 판정 표는 그대로 볼 수 있어요.")
@@ -479,20 +480,18 @@ else:
     rows.sort(key=lambda r: r["_순서"])
     actionable.sort(key=lambda r: r["_순서"])
 
-
     with st.container(border=True, key="section_bid_judgment"):
         st.markdown("#### 입찰가 진단")
         st.caption(
-            "현재입찰가 vs 평균입찰가(시세) + 예산 소진/클릭 추세를 같이 봐서 인하 여지를 판단합니다. "
-            "근거에 붙는 '이상노출 N주 제외'는 클릭 수는 그대로인데 노출만 비정상적으로 튄(경쟁사 "
-            "어뷰징 의심) 주를 추세 계산에서 뺐다는 뜻입니다."
+            "현재입찰가 vs 평균입찰가(시세) + 예산 소진/클릭 추세를 같이 봐서 인하 여지를 판단합니다."
         )
         st.markdown(render_results_table(rows), unsafe_allow_html=True)
         st.caption(
-            f"기준값: 예산소진 판정 = 지난주(월~일) 중 {BUDGET_EXHAUST_DAY_RATIO*7:.0f}일 이상 "
-            f"하루예산의 {BUDGET_EXHAUST_RATIO*100:.0f}%+ 소진 · 이상노출 = 이전 평균 대비 노출 {ANOMALY_IMPRESSION_MULTIPLIER}배+ "
-            f"인데 클릭은 {ANOMALY_CLICK_MULTIPLIER}배 미만 · 클릭 하락 판정 = 기준선의 {CLICK_DECLINE_THRESHOLD*100:.0f}% 미만 · "
-            f"시세 대비 배율 {BID_RATIO_HIGH*100:.0f}%+ 면 인하 후보, {BID_RATIO_LOW*100:.0f}% 이하면 조정 불필요"
+            f"기준: 지난주(월~일) 7일 중 {BUDGET_EXHAUST_DAY_RATIO*7:.0f}일 이상 하루예산의 "
+            f"{BUDGET_EXHAUST_RATIO*100:.0f}%를 넘게 쓰면 '예산 소진'으로 봅니다. 최근 3주 클릭이 "
+            f"그 이전보다 {(1-CLICK_DECLINE_THRESHOLD)*100:.0f}% 넘게 줄면 '클릭 하락'으로 봅니다. "
+            f"입찰가가 평균(시세)의 {BID_RATIO_HIGH:g}배를 넘으면 '시세 매우 높음', "
+            f"{BID_RATIO_LOW:g}배 이하면 시세와 비슷한 걸로 판단합니다."
         )
 
     # ==========================================
