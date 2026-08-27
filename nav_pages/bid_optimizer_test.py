@@ -29,7 +29,7 @@ KST = ZoneInfo("Asia/Seoul")
 # 기준으로 명시 계산한다.
 
 BUDGET_EXHAUST_RATIO = 0.9  # 하루예산의 90% 이상 쓰면 "그날은 예산 소진"으로 봄
-BUDGET_EXHAUST_DAY_RATIO = 5 / 7  # 최근 7일 중 이 비율 이상 소진되면 "예산소진형" 매장
+BUDGET_EXHAUST_DAY_RATIO = 5 / 7  # 지난주(월~일) 중 이 비율 이상 소진되면 "예산소진형" 매장
 ANOMALY_IMPRESSION_MULTIPLIER = 2.0  # 이전 주 평균 대비 노출이 이만큼 튀면 이상치 후보
 # 2.5로는 실제 사례(고집돌우럭 중문점 8/17주, 2.08배)를 못 잡아서 2.0으로 낮춤(2026-08-25).
 # 12개 매장 9주치 데이터로 스캔해본 결과 2.0에서는 이 건 하나만 걸리고 오탐(클릭도
@@ -225,9 +225,15 @@ def fetch_avg_bid(adgroup_id):
 
 
 def check_budget_exhaustion(adgroup_id, daily_budget, today):
-    """최근 7일 중 며칠이나 하루예산의 90%+ 를 썼는지."""
-    start = today - datetime.timedelta(days=7)
-    end = today - datetime.timedelta(days=1)
+    """지난주(가장 최근에 끝난 월~일) 중 며칠이나 하루예산의 90%+ 를 썼는지.
+    creative_daily_stats 자체가 매주 월요일에 "지난 한 주치"를 한 번에 채워 넣는
+    구조라(2026-08-27 확인 — 크론 실행 이력상 매주 월요일 1회, 그 전날까지의 데이터를
+    수집), '최근 7일 롤링'으로 계산하면 이번 주가 진행될수록 표본이 줄어(월요일엔
+    거의 7일, 목요일엔 4일 정도) 판정이 요일에 따라 흔들리는 문제가 있었다. 대신
+    지난주 월~일로 창을 고정하면 이번 주 내내 항상 같은 꽉 찬 7일 데이터로 계산된다."""
+    this_monday = today - datetime.timedelta(days=today.weekday())
+    start = this_monday - datetime.timedelta(days=7)
+    end = this_monday - datetime.timedelta(days=1)
     df = fetch_daily(adgroup_id, start, end)
     if df.empty or not daily_budget:
         return 0, 0, False
@@ -472,7 +478,7 @@ else:
         )
         st.markdown(render_results_table(rows), unsafe_allow_html=True)
         st.caption(
-            f"기준값: 예산소진 판정 = 최근 7일 중 {BUDGET_EXHAUST_DAY_RATIO*7:.0f}일 이상 "
+            f"기준값: 예산소진 판정 = 지난주(월~일) 중 {BUDGET_EXHAUST_DAY_RATIO*7:.0f}일 이상 "
             f"하루예산의 {BUDGET_EXHAUST_RATIO*100:.0f}%+ 소진 · 이상노출 = 이전 평균 대비 노출 {ANOMALY_IMPRESSION_MULTIPLIER}배+ "
             f"인데 클릭은 {ANOMALY_CLICK_MULTIPLIER}배 미만 · 클릭 하락 판정 = 기준선의 {CLICK_DECLINE_THRESHOLD*100:.0f}% 미만 · "
             f"시세 대비 배율 {BID_RATIO_HIGH*100:.0f}%+ 면 인하 후보, {BID_RATIO_LOW*100:.0f}% 이하면 조정 불필요"
