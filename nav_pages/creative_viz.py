@@ -404,11 +404,15 @@ def render_bid_info(ad_type, adgroup, week_monday):
                 diff = bid_amt - avg_bid
                 diff_color = "#E03131" if diff < 0 else "#16181D"
                 diff_html = f'<span style="color:{diff_color};">{diff:,}원</span>'
+                daily_budget = adgroup.get("dailyBudget", 0)
                 # 관리자 모드에서는 "평균 입찰가" 행을 표에 정적으로 넣는 대신, 표를
-                # 현재입찰가(+차액) 한 줄로 컴팩트하게 줄이고 그 바로 아래에 실제
-                # 입력 위젯을 붙인다 — 예전처럼 입력창을 표 위 별도 블록으로 얹지
-                # 않고, 표가 그 자리(위쪽)를 그대로 차지하도록.
-                rows = [("현재 입찰가", f"{bid_amt:,}원", diff_html)]
+                # 현재입찰가(+차액)/하루예산 두 줄로 컴팩트하게 줄이고 그 바로 아래에
+                # 실제 입력 위젯을 붙인다 — 예전처럼 입력창을 표 위 별도 블록으로
+                # 얹지 않고, 표가 그 자리(위쪽)를 그대로 차지하도록. 하루예산은
+                # 파워링크 등 다른 광고 유형 표에는 있는데 플레이스광고만 빠져있던
+                # 걸 채워 넣었다(2026-08-27 지적) — 값 자체는 이미 수집돼서
+                # 입찰가 조정 페이지의 예산소진 판정에 쓰이고 있었다.
+                rows = [("현재 입찰가", f"{bid_amt:,}원", diff_html), ("하루 예산", f"{daily_budget:,}원", None)]
                 if not is_admin:
                     rows.append(("평균 입찰가", f"{avg_bid:,}원", None))
                 st.markdown(_build_table(rows), unsafe_allow_html=True)
@@ -490,7 +494,10 @@ def render_bid_info_legacy(ad_type, adgroup, week_monday):
                 diff = bid_amt - avg_bid
                 diff_color = "#E03131" if diff < 0 else "#16181D"
                 diff_html = f'<span style="color:{diff_color};">{diff:,}원</span>'
-                rows = [("현재 입찰가", f"{bid_amt:,}원", diff_html)]
+                daily_budget = adgroup.get("dailyBudget", 0)
+                # 파워링크 등 다른 광고 유형 표에는 있는데 플레이스광고만 하루예산이
+                # 빠져있던 걸 채워 넣었다(2026-08-27 지적).
+                rows = [("현재 입찰가", f"{bid_amt:,}원", diff_html), ("하루 예산", f"{daily_budget:,}원", None)]
                 if not is_admin:
                     rows.append(("평균 입찰가", f"{avg_bid:,}원", None))
                 st.markdown(_build_table(rows), unsafe_allow_html=True)
