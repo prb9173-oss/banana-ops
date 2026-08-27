@@ -93,31 +93,42 @@ def update_adgroup_bid_live(customer_id, api_key, secret_key, adgroup_id, new_bi
     return r.json()
 
 
-def append_bid_change_note(adgroup_id, week_monday, avg_bid_amt, old_bid_amt, new_bid_amt):
-    """입찰가를 실제로 바꾸면 그 주 "특이사항"(creative_admin_notes.note, "주간 광고
-    데이터" 페이지에 그대로 보임)에 변경 기록을 한 줄 남긴다. 별도 이력 테이블을 두면
-    계속 쌓이기만 해서 관리 부담이 된다는 지적(2026-08-26)이 있었고, 이미 있는 주간
-    메모 칸이 매주 자연스럽게 새로 시작되니 그대로 재사용하는 게 낫다고 판단했다.
+def append_bid_change_note(adgroup_id, avg_bid_amt, old_bid_amt, new_bid_amt):
+    """입찰가를 실제로 바꾸면 "특이사항"(creative_admin_notes.note, "주간 광고 데이터"
+    페이지에 그대로 보임)에 변경 기록을 한 줄 남긴다. 별도 이력 테이블을 두면 계속
+    쌓이기만 해서 관리 부담이 된다는 지적(2026-08-26)이 있었고, 이미 있는 주간 메모
+    칸이 매주 자연스럽게 새로 시작되니 그대로 재사용하는 게 낫다고 판단했다.
+
+    어느 주(week_monday)에 적을지는 creative_adgroup_snapshot의 최신 주차를 쓰면 안
+    된다 — check_ad_performance.py 크론이 월요일에 "지난주" 날짜로 스냅샷을 채워
+    넣는 구조라(2026-08-27 확인), 이번 주 스냅샷 행 자체가 다음 주 월요일까지 없다.
+    그 최신 스냅샷 주차를 그대로 쓰면, 오늘 조정한 기록이 이미 끝난 지난주 메모에
+    붙어버려서 나중에 이번 주 데이터를 봐도 이 기록이 안 보이는 문제가 있었다
+    (2026-08-27 지적). creative_admin_notes는 스냅샷과 별개 테이블이라 스냅샷 행이
+    없어도 "오늘이 속한 이번 주" 행을 그냥 새로 만들면 된다 — 다음 주 월요일에
+    스냅샷이 생기면 이미 이 메모가 그 주에 가 있는 채로 자연스럽게 이어진다.
     관리자가 이미 적어둔 메모가 있으면 절대 안 지우고 뒤에 이어붙인다."""
+    today = datetime.datetime.now(KST).date()
+    this_monday = (today - datetime.timedelta(days=today.weekday())).isoformat()
+
     client = get_supabase_client()
     res = (
         client.table("creative_admin_notes")
         .select("note")
         .eq("adgroup_id", adgroup_id)
-        .eq("week_monday", week_monday)
+        .eq("week_monday", this_monday)
         .limit(1)
         .execute()
     )
     rows = res.data or []
     existing_note = (rows[0].get("note") or "") if rows else ""
 
-    today = datetime.datetime.now(KST).date()
     change_line = f"{today.month}/{today.day} 입찰가 {old_bid_amt:,}원 → {new_bid_amt:,}원"
     new_note = f"{existing_note} / {change_line}" if existing_note else change_line
 
     client.table("creative_admin_notes").upsert({
         "adgroup_id": adgroup_id,
-        "week_monday": week_monday,
+        "week_monday": this_monday,
         "avg_bid_amt": int(avg_bid_amt),
         "note": new_note,
     }, on_conflict="adgroup_id,week_monday").execute()
@@ -155,7 +166,7 @@ def apply_bid_change(store_name, adgroup_id, new_bid_amt, week_monday, old_bid_a
         return True, f"⚠️ 네이버에는 반영됐지만 화면 갱신 중 오류: {e}"
 
     try:
-        append_bid_change_note(adgroup_id, week_monday, avg_bid_amt, old_bid_amt, new_bid_amt)
+        append_bid_change_note(adgroup_id, avg_bid_amt, old_bid_amt, new_bid_amt)
     except Exception:
         # 특이사항 기록은 부가 기능 — 실패해도 입찰가 자체는 이미 정상 반영됐으니
         # 사용자에게는 성공으로 보고한다.
