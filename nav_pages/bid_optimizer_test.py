@@ -123,7 +123,7 @@ def append_bid_change_note(adgroup_id, avg_bid_amt, old_bid_amt, new_bid_amt):
     rows = res.data or []
     existing_note = (rows[0].get("note") or "") if rows else ""
 
-    change_line = f"{today.month}/{today.day} 입찰가 {old_bid_amt:,}원 → {new_bid_amt:,}원"
+    change_line = f"{today.month}.{today.day} 입찰가 {old_bid_amt:,}원 → {new_bid_amt:,}원"
     new_note = f"{existing_note} / {change_line}" if existing_note else change_line
 
     client.table("creative_admin_notes").upsert({
