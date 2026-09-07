@@ -142,12 +142,19 @@ def append_bid_change_note(adgroup_id, avg_bid_amt, old_bid_amt, new_bid_amt):
     }, on_conflict="adgroup_id,week_monday").execute()
 
 
-def log_bid_adjustment(adgroup_id, store_name, avg_bid_amt, old_bid_amt, new_bid_amt):
+def log_bid_adjustment(adgroup_id, store_name, avg_bid_amt, old_bid_amt, new_bid_amt, snapshot_week_monday):
     """creative_bid_adjustment_log에 구조화된 조정 이력을 남긴다(2026-09-07) —
     특이사항(자유 텍스트)과 달리 나중에 "조정 후 클릭/노출이 실제로 개선됐는지"
     집계 쿼리를 돌릴 수 있게 하는 게 목적이다. 클릭수 등 실적 자체는 여기 저장하지
     않는다 — creative_daily_stats에 이미 쌓이고 있으니 applied_at을 기준으로 전/후
-    구간을 나중에 계산하면 된다. 이 페이지는 플레이스광고만 다루므로 ad_type은 고정."""
+    구간을 나중에 계산하면 된다. 이 페이지는 플레이스광고만 다루므로 ad_type은 고정.
+
+    snapshot_week_monday는 이번에 실제로 덮어쓴 creative_adgroup_snapshot 행의
+    week_monday다(2026-09-07 추가) — 크론이 스냅샷을 "지난주" 라벨로 채워 넣는
+    구조라, 이번 주(예: 9월 2주차)에 조정해도 그 스냅샷 행은 "9월 1주차"로 찍혀
+    있을 수 있다. applied_at(실제 조정한 날짜)만으로는 그 사실을 알 수 없어서
+    따로 남긴다 — 나중에 "이 스냅샷 값이 사실 원래 수집값이 아니라 도중에
+    수동으로 덮어써진 값"이라는 걸 판정 로직이 감지하는 데 쓴다."""
     client = get_supabase_client()
     client.table("creative_bid_adjustment_log").insert({
         "adgroup_id": adgroup_id,
@@ -157,6 +164,7 @@ def log_bid_adjustment(adgroup_id, store_name, avg_bid_amt, old_bid_amt, new_bid
         "old_value": int(old_bid_amt),
         "new_value": int(new_bid_amt),
         "avg_bid_amt": int(avg_bid_amt) if avg_bid_amt else None,
+        "snapshot_week_monday": snapshot_week_monday,
     }).execute()
 
 
@@ -199,7 +207,7 @@ def apply_bid_change(store_name, adgroup_id, new_bid_amt, week_monday, old_bid_a
         pass
 
     try:
-        log_bid_adjustment(adgroup_id, store_name, avg_bid_amt, old_bid_amt, new_bid_amt)
+        log_bid_adjustment(adgroup_id, store_name, avg_bid_amt, old_bid_amt, new_bid_amt, week_monday)
     except Exception:
         # 이력 기록도 부가 기능 — 실패해도 입찰가 자체는 이미 정상 반영됨.
         pass
@@ -417,6 +425,34 @@ def check_recent_cut_backfired(adgroup_id, today):
     return False, None, None
 
 
+def check_snapshot_already_adjusted(adgroup_id, snapshot_week_monday):
+    """지금 보고 있는 스냅샷(week_monday)의 bid_amt가 이미 한 번 수동으로 조정된
+    값인지 확인한다(2026-09-07) — check_ad_performance.py 크론은 스냅샷을 "지난주"
+    라벨로 채워 넣는데(예: 9월 2주차에 조정해도 그 시점의 최신 스냅샷은 "9월 1주차"
+    라벨을 달고 있어서, 그 행이 덮어써짐), 그러면 "9월 1주차 데이터"라는 이름이
+    붙은 값이 사실은 9월 2주차에 손댄 값이 된다. 지금 판정에는 문제가 없지만(현재
+    입찰가는 어차피 최신 실제 값이라 맞게 계산됨), 나중에 이 주차를 복기할 때
+    헷갈릴 수 있어 경고 메모를 남긴다."""
+    client = get_supabase_client()
+    res = (
+        client.table("creative_bid_adjustment_log")
+        .select("applied_at, old_value, new_value")
+        .eq("adgroup_id", adgroup_id)
+        .eq("field_changed", "bid_amt")
+        .eq("snapshot_week_monday", snapshot_week_monday)
+        .order("applied_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
+        return None
+    row = rows[0]
+    applied_at = datetime.datetime.fromisoformat(row["applied_at"].replace("Z", "+00:00")).date()
+    direction = "인상" if row["new_value"] > row["old_value"] else "인하"
+    return f"{applied_at.month}.{applied_at.day} 입찰가 {row['old_value']:,}원 → {row['new_value']:,}원 {direction}"
+
+
 def suggest_bid(bid_amt, avg_bid, cut_pct):
     """시세까지 한 번에 내리지 않고 소폭만 내린다 — 조정 후 지켜보고 다음 판단에
     반영하는 전제라서, 한 단계 테스트용 값만 계산한다. 시세보다 낮게는 추천하지
@@ -481,7 +517,7 @@ def render_results_table(rows):
     return html
 
 
-def judge(adgroup_id, bid_amt, daily_budget, avg_bid, today):
+def judge(adgroup_id, bid_amt, daily_budget, avg_bid, today, snapshot_week_monday=None):
     exhausted_days, total_days, budget_exhausted = check_budget_exhaustion(
         adgroup_id=adgroup_id, daily_budget=daily_budget, today=today
     )
@@ -492,7 +528,7 @@ def judge(adgroup_id, bid_amt, daily_budget, avg_bid, today):
         return {
             "verdict": "평균입찰가 미입력", "reason": "비교할 시세 값이 없어 판단 불가",
             "ratio": None, "suggested_bid": None, "exhausted_days": exhausted_days, "total_days": total_days,
-            "anomaly_weeks": trend["anomaly_weeks"], "trend_note": trend["note"],
+            "anomaly_weeks": trend["anomaly_weeks"], "trend_note": trend["note"], "already_adjusted_note": None,
         }
 
     # 판정은 배지 색으로 구분하고(이모지 없이) — 이모지를 줄여달라는 요청(2026-08-25).
@@ -553,12 +589,22 @@ def judge(adgroup_id, bid_amt, daily_budget, avg_bid, today):
             suggested_bid = None
         tags.append(backfired_reason)
 
+    # 지금 보고 있는 스냅샷 자체가 이미 도중에 수동으로 덮어써진 값이면, 라벨
+    # 주차와 실제 조정 시점이 다르다는 걸 알려준다(2026-09-07 요청). 위쪽 진단
+    # 표 "비고"에는 안 넣고, 아래 "입찰가 조정" 카드의 판정 배지 옆에만 따로
+    # 보여준다(2026-09-07 재요청) — 실제로 다시 조정 버튼을 누를지 말지 결정하는
+    # 그 자리에서만 필요한 경고라서다.
+    already_adjusted_note = None
+    if snapshot_week_monday:
+        already_adjusted_note = check_snapshot_already_adjusted(adgroup_id, snapshot_week_monday)
+
     reason = " · ".join(tags)
 
     return {
         "verdict": verdict, "reason": reason, "ratio": ratio, "suggested_bid": suggested_bid,
         "exhausted_days": exhausted_days, "total_days": total_days,
         "anomaly_weeks": trend["anomaly_weeks"], "trend_note": trend["note"],
+        "already_adjusted_note": already_adjusted_note,
     }
 
 
@@ -582,7 +628,7 @@ else:
         bid_amt = ag.get("bid_amt", 0) or 0
         daily_budget = ag.get("daily_budget", 0) or 0
 
-        result = judge(ag["adgroup_id"], bid_amt, daily_budget, avg_bid, today)
+        result = judge(ag["adgroup_id"], bid_amt, daily_budget, avg_bid, today, ag["week_monday"])
         rows.append({
             "매장": ag["account_key"],
             "판정": result["verdict"],
@@ -602,6 +648,7 @@ else:
                 "bid_amt": bid_amt,
                 "avg_bid": avg_bid,
                 "suggested_bid": result["suggested_bid"],
+                "already_adjusted_note": result["already_adjusted_note"],
                 "_순서": store_order_map.get(ag["account_key"], 999),
             })
 
@@ -689,7 +736,12 @@ else:
                             label_visibility="collapsed",
                         )
                     with col_verdict:
-                        st.markdown(render_verdict_badge(item["verdict"]), unsafe_allow_html=True)
+                        badge_html = render_verdict_badge(item["verdict"])
+                        if item.get("already_adjusted_note"):
+                            badge_html += (
+                                f' <span class="bid-change-text">{item["already_adjusted_note"]}</span>'
+                            )
+                        st.markdown(badge_html, unsafe_allow_html=True)
                     with col_btn:
                         if st.button("적용", key=f"apply_bid_{item['adgroup_id']}", width="stretch"):
                             st.session_state["bid_apply_pending"] = {**item, "suggested_bid": int(target_bid)}
