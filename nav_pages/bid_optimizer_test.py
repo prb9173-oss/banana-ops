@@ -41,6 +41,14 @@ BID_RATIO_LOW = 1.5  # 시세 대비 이 배율 이하면 "차이 없음"
 CUT_PCT_BUDGET_EXHAUSTED = 0.20  # 예산소진형(가장 확실한 케이스)은 조금 더 과감하게
 CUT_PCT_HIGH_RATIO = 0.15  # 일반 "인하 테스트 권장" 케이스
 BID_ROUND_TO = 10  # 추천가를 이 단위로 반올림 (네이버 입찰가 입력 단위에 맞춤)
+RECENT_CUT_DROP_THRESHOLD = 0.20  # 직전 입찰가 인하 후 노출·클릭이 "둘 다" 이 비율
+# 이상 줄었으면 순위가 밀린 걸로 보고 추가 인하 추천을 멈춘다(2026-09-07, 와인창고
+# 본점류에서 노출 -36%·클릭 -35% 동반 하락 확인 — 실제 관찰치의 절반 수준인 20%를
+# 기준으로 잡아 보수적으로(더 약한 신호에서도) 잡아낸다).
+RAISE_STEP_PCT = 0.30  # 인하가 역효과였던 게 확인되면, 인하 전 입찰가로 한 번에
+# 되돌리지 않고 그 차액의 30%만큼만 인상 추천 — 인하할 때와 같은 "조금씩 조정하고
+# 지켜본다" 원칙(2026-09-07). 와인창고 본점(1400원→500원 인하)이면 500+900*0.3=770원
+# 추천 — 사용자가 직접 검토하던 700~800원대와 맞아떨어진다.
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -332,6 +340,83 @@ def check_click_trend(adgroup_id, today):
     return {"declining": declining, "anomaly_weeks": anomaly_count, "note": note}
 
 
+def check_recent_cut_backfired(adgroup_id, today):
+    """이 매장의 가장 최근 입찰가 인하 이후, 노출·클릭이 "둘 다" 확실히 줄었으면
+    그 인하가 역효과였던 걸로 보고 (True, 사유, 인하 전 입찰가)를 돌려준다 —
+    판단 로직이 같은 매장에 또 인하를 추천하지 않고, 오히려 일부 되돌리는(인상)
+    쪽을 제안하도록 하기 위한 안전장치다(2026-09-07). 와인창고
+    본점에서 발견된 패턴 대응: 검색량이 적은 키워드는 입찰가를 내리면 순위가
+    "더보기" 밖으로 튕겨나가 노출 자체가 확 줄 수 있는데, 배율/예산 신호만 보는
+    기존 로직은 이걸 전혀 모르고 계속 인하를 추천했다. 매장명을 코드에 박아두는
+    대신 creative_bid_adjustment_log(실제 조정 이력) + creative_daily_stats(실제
+    노출/클릭)를 직접 비교해서 판단하므로, 같은 패턴을 보이는 다른 매장에도
+    자동으로 적용된다."""
+    client = get_supabase_client()
+    res = (
+        client.table("creative_bid_adjustment_log")
+        .select("applied_at, old_value")
+        .eq("adgroup_id", adgroup_id)
+        .eq("field_changed", "bid_amt")
+        .order("applied_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    rows = res.data or []
+    if not rows:
+        return False, None, None
+
+    old_bid_amt = rows[0]["old_value"]
+    applied_raw = rows[0]["applied_at"]
+    applied_at = datetime.datetime.fromisoformat(applied_raw.replace("Z", "+00:00")).date()
+    before_start = applied_at - datetime.timedelta(days=7)
+
+    # "이전" 구간 도중에 예산 등 다른 조정이 끼어있으면 그 이후로만 기준선을
+    # 다시 잡는다 — 안 그러면 이번 입찰가 인하 효과에 그 전 조정(예: 예산 반토막)
+    # 효과까지 섞여서 하락폭이 과장된다(2026-09-07 지적 — 와인가게바나나 중문점·
+    # 와인창고 동문시장점이 8/27에 예산도 반으로 줄여서 실제로 이 문제가 있었다).
+    other_res = (
+        client.table("creative_bid_adjustment_log")
+        .select("applied_at")
+        .eq("adgroup_id", adgroup_id)
+        .gte("applied_at", before_start.isoformat())
+        .lt("applied_at", applied_raw)
+        .order("applied_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    other_rows = other_res.data or []
+    if other_rows:
+        other_at = datetime.datetime.fromisoformat(other_rows[0]["applied_at"].replace("Z", "+00:00")).date()
+        before_start = max(before_start, other_at)
+
+    before_df = fetch_daily(adgroup_id, before_start, applied_at - datetime.timedelta(days=1))
+    after_end = min(today - datetime.timedelta(days=1), applied_at + datetime.timedelta(days=6))
+    if after_end < applied_at:
+        return False, None, None  # 조정 당일이라 이후 데이터가 아직 없음
+    after_df = fetch_daily(adgroup_id, applied_at, after_end)
+
+    # 하루이틀 노이즈로 오판하지 않게 최소 3일치는 있어야 판단한다.
+    if len(before_df) < 3 or len(after_df) < 3:
+        return False, None, None
+
+    before_impr = before_df["노출수"].sum() / len(before_df)
+    before_clk = before_df["클릭수"].sum() / len(before_df)
+    after_impr = after_df["노출수"].sum() / len(after_df)
+    after_clk = after_df["클릭수"].sum() / len(after_df)
+    if before_impr <= 0 or before_clk <= 0:
+        return False, None, None
+
+    impr_drop = 1 - (after_impr / before_impr)
+    clk_drop = 1 - (after_clk / before_clk)
+    if impr_drop >= RECENT_CUT_DROP_THRESHOLD and clk_drop >= RECENT_CUT_DROP_THRESHOLD:
+        reason = (
+            f"직전 조정({applied_at.month}.{applied_at.day}) 후 노출 {impr_drop*100:.0f}%·"
+            f"클릭 {clk_drop*100:.0f}% 동반 감소 — 순위 밀림 의심"
+        )
+        return True, reason, old_bid_amt
+    return False, None, None
+
+
 def suggest_bid(bid_amt, avg_bid, cut_pct):
     """시세까지 한 번에 내리지 않고 소폭만 내린다 — 조정 후 지켜보고 다음 판단에
     반영하는 전제라서, 한 단계 테스트용 값만 계산한다. 시세보다 낮게는 추천하지
@@ -349,6 +434,7 @@ VERDICT_BADGE_CLASS = {
     "보류": "pill-bid-hold",
     "조정 불필요": "pill-bid-neutral",
     "수동 검토": "pill-bid-review",
+    "인상 검토": "pill-bid-raise",
     "평균입찰가 미입력": "pill-bid-nodata",
 }
 TABLE_BORDER = "#E3E6EB"
@@ -410,8 +496,10 @@ def judge(adgroup_id, bid_amt, daily_budget, avg_bid, today):
         }
 
     # 판정은 배지 색으로 구분하고(이모지 없이) — 이모지를 줄여달라는 요청(2026-08-25).
-    # "올려야 함" 판정은 지금 로직에 없다 — 시세보다 낮은데 노출/클릭까지 빠지는
-    # 케이스를 감지하는 로직은 다음에 추가할 수 있음.
+    # "인상 검토"는 시세보다 낮은데 노출/클릭이 빠지는 일반 케이스를 감지하는 게
+    # 아니라, 아래 backfired 체크에서 "직전 인하가 실제로 역효과였다"고 실측
+    # 확인됐을 때만 나온다(2026-09-07) — 배율/예산만 보고 올리라고 하는 판정은
+    # 없다(시세보다 낮다고 무작정 올리면 근거가 약함).
     #
     # 근거는 "판정을 결정한 신호 하나"가 아니라, 해당되는 신호를 전부 짧은 태그로
     # 나열한다(2026-08-25, 사용자 피드백 — 예산 소진 하나만 근거로 뜨면, 사실은
@@ -448,6 +536,22 @@ def judge(adgroup_id, bid_amt, daily_budget, avg_bid, today):
         verdict = "조정 불필요"
     else:
         verdict = "수동 검토"
+
+    # 다른 신호가 뭐라고 하든, 직전 인하가 이미 역효과였던 게 확인되면 무조건
+    # 덮어쓴다 — 안 그러면 순위 밀림을 전혀 모르는 배율/예산 신호가 같은 매장에
+    # 계속 추가 인하를 추천하게 된다(2026-09-07). 그냥 "보류"로 멈추기보다, 인하
+    # 전 값의 일부만큼 되돌리는 인상을 적극적으로 제안한다 — 이미 실측으로 역효과가
+    # 확인된 상황이라 "일단 지켜보자"보다 "일부 되돌려보자"가 더 근거 있는 액션이다.
+    backfired, backfired_reason, pre_cut_bid_amt = check_recent_cut_backfired(adgroup_id, today)
+    if backfired:
+        if pre_cut_bid_amt and pre_cut_bid_amt > bid_amt:
+            verdict = "인상 검토"
+            raise_target = bid_amt + (pre_cut_bid_amt - bid_amt) * RAISE_STEP_PCT
+            suggested_bid = int(round(raise_target / BID_ROUND_TO) * BID_ROUND_TO)
+        else:
+            verdict = "보류"
+            suggested_bid = None
+        tags.append(backfired_reason)
 
     reason = " · ".join(tags)
 

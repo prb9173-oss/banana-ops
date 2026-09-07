@@ -794,6 +794,7 @@ st.markdown(f"""
     .status-pill.pill-bid-hold {{ background:#FEF3C7 !important; color:#92400E !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
     .status-pill.pill-bid-neutral {{ background:#F1F5F9 !important; color:#64748B !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
     .status-pill.pill-bid-review {{ background:#FFEDD5 !important; color:#9A3412 !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
+    .status-pill.pill-bid-raise {{ background:#F3E8FF !important; color:#6B21A8 !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
     .status-pill.pill-bid-nodata {{ background:#F8FAFC !important; color:#94A3B8 !important; margin-bottom: 0 !important; font-size:13.5px !important; padding: 4px 12px !important; }}
 
     /* 조정 후보 매장 카드 행 — pr_kwrow_와 같은 패턴(구분선만, 개별 박스 없음),
