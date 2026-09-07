@@ -134,6 +134,24 @@ def append_bid_change_note(adgroup_id, avg_bid_amt, old_bid_amt, new_bid_amt):
     }, on_conflict="adgroup_id,week_monday").execute()
 
 
+def log_bid_adjustment(adgroup_id, store_name, avg_bid_amt, old_bid_amt, new_bid_amt):
+    """creative_bid_adjustment_log에 구조화된 조정 이력을 남긴다(2026-09-07) —
+    특이사항(자유 텍스트)과 달리 나중에 "조정 후 클릭/노출이 실제로 개선됐는지"
+    집계 쿼리를 돌릴 수 있게 하는 게 목적이다. 클릭수 등 실적 자체는 여기 저장하지
+    않는다 — creative_daily_stats에 이미 쌓이고 있으니 applied_at을 기준으로 전/후
+    구간을 나중에 계산하면 된다. 이 페이지는 플레이스광고만 다루므로 ad_type은 고정."""
+    client = get_supabase_client()
+    client.table("creative_bid_adjustment_log").insert({
+        "adgroup_id": adgroup_id,
+        "store_name": store_name,
+        "ad_type": "플레이스광고",
+        "field_changed": "bid_amt",
+        "old_value": int(old_bid_amt),
+        "new_value": int(new_bid_amt),
+        "avg_bid_amt": int(avg_bid_amt) if avg_bid_amt else None,
+    }).execute()
+
+
 def apply_bid_change(store_name, adgroup_id, new_bid_amt, week_monday, old_bid_amt, avg_bid_amt):
     """추천 입찰가를 실제 네이버 계정에 반영하고, 성공하면 creative_adgroup_snapshot의
     해당 광고그룹 최신 주차 bid_amt도 같이 갱신한다 — "주간 광고 데이터" 페이지가
@@ -170,6 +188,12 @@ def apply_bid_change(store_name, adgroup_id, new_bid_amt, week_monday, old_bid_a
     except Exception:
         # 특이사항 기록은 부가 기능 — 실패해도 입찰가 자체는 이미 정상 반영됐으니
         # 사용자에게는 성공으로 보고한다.
+        pass
+
+    try:
+        log_bid_adjustment(adgroup_id, store_name, avg_bid_amt, old_bid_amt, new_bid_amt)
+    except Exception:
+        # 이력 기록도 부가 기능 — 실패해도 입찰가 자체는 이미 정상 반영됨.
         pass
 
     fetch_place_main_adgroups.clear()
