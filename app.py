@@ -124,7 +124,7 @@ st.markdown(f"""
     /* 플레이스 순위 전일 대비 변동 배지 */
     .pill-rank-up {{ background:#DCFCE7; color:#166534; margin-bottom: 0; }}
     .pill-rank-down {{ background:#FEE2E2; color:#991B1B; margin-bottom: 0; }}
-    .pill-rank-same {{ background:#F1F5F9; color:#64748B; margin-bottom: 0; }}
+    .pill-rank-same {{ background:#F1F5F9; color:#16181D; margin-bottom: 0; }}
     .pill-rank-unknown {{ background:#FEF3C7; color:#92400E; margin-bottom: 0; }}
 
     .rank-kw {{ font-size: 13px; font-weight: 500; color: #5B6472; }}
